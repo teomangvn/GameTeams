@@ -1,0 +1,24 @@
+# Dev profili: mailler Mailpit'e düşer (http://localhost:8025), gerçek mail gitmez.
+spring:
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    properties:
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
+
+  jpa:
+    show-sql: true
+    properties:
+      hibernate.format_sql: true
+
+management:
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.gameteams: DEBUG
+    org.springframework.web.socket: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE

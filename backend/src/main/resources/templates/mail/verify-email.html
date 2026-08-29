@@ -1,0 +1,57 @@
+<!doctype html>
+<html xmlns:th="http://www.thymeleaf.org" lang="tr">
+<head>
+  <meta charset="utf-8">
+  <title>GameTeams hesabını doğrula</title>
+</head>
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+               style="max-width:520px;background:#141414;border:1px solid #262626;border-radius:16px;padding:32px;">
+          <tr>
+            <td>
+              <h1 style="margin:0 0 8px;font-size:20px;color:#fafafa;">GameTeams</h1>
+              <p style="margin:0 0 24px;font-size:14px;color:#a3a3a3;">Hesabını doğrula</p>
+
+              <p style="margin:0 0 16px;font-size:15px;color:#e5e5e5;line-height:1.6;">
+                Merhaba <strong th:text="${displayName}">oyuncu</strong>,
+              </p>
+              <p style="margin:0 0 24px;font-size:15px;color:#e5e5e5;line-height:1.6;">
+                GameTeams hesabın oluşturuldu. Giriş yapabilmek için önce e-posta adresini
+                doğrulaman gerekiyor.
+              </p>
+
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+                <tr>
+                  <td style="border-radius:8px;background:#fafafa;">
+                    <a th:href="${verifyUrl}" href="#"
+                       style="display:inline-block;padding:12px 24px;font-size:15px;font-weight:600;
+                              color:#0a0a0a;text-decoration:none;border-radius:8px;">
+                      E-postamı doğrula
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 8px;font-size:13px;color:#a3a3a3;line-height:1.6;">
+                Buton çalışmazsa bu bağlantıyı tarayıcına yapıştır:
+              </p>
+              <p style="margin:0 0 24px;font-size:12px;color:#737373;word-break:break-all;">
+                <span th:text="${verifyUrl}">https://gameteams.example/verify-email?token=...</span>
+              </p>
+
+              <hr style="border:none;border-top:1px solid #262626;margin:0 0 16px;">
+              <p style="margin:0;font-size:12px;color:#737373;line-height:1.6;">
+                Bağlantı 24 saat geçerlidir. Bu hesabı sen oluşturmadıysan bu e-postayı
+                yok sayabilirsin.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
