@@ -70,3 +70,14 @@ gameteams:
     username: ${ADMIN_USERNAME:admin}
     email: ${ADMIN_EMAIL:}
     password: ${ADMIN_PASSWORD:}
+  cookie:
+    # Prod'da nginx TLS sonlandirdigi icin true olmali (application-prod.yml).
+    secure: ${COOKIE_SECURE:false}
+    same-site: ${COOKIE_SAME_SITE:Lax}
+  webrtc:
+    # Google STUN ucretsiz ve dev icin yeterli. Prod'da coturn eklenir.
+    stun-urls: ${STUN_URLS:stun:stun.l.google.com:19302}
+    turn-urls: ${TURN_URLS:}
+    # coturn "use-auth-secret" modu icin paylasilan sir. Bos ise TURN kapali.
+    turn-secret: ${TURN_SECRET:}
+    turn-credential-ttl: ${TURN_TTL:PT12H}

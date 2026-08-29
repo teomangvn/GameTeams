@@ -34,7 +34,9 @@ class JwtServiceTest {
 				"no-reply@gameteams.local",
 				new GameTeamsProperties.Cors(List.of("http://localhost:5173")),
 				new GameTeamsProperties.Jwt(secret, accessTtl, Duration.ofDays(30)),
-				new GameTeamsProperties.Admin("admin", "", "")));
+				new GameTeamsProperties.Admin("admin", "", ""),
+				new GameTeamsProperties.Webrtc(List.of(), List.of(), "", Duration.ofHours(12)),
+				new GameTeamsProperties.Cookie(false, "Lax")));
 	}
 
 	@Test

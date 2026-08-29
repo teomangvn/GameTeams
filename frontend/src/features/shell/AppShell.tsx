@@ -1,12 +1,29 @@
 import { useCallback, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
+import type { Conversation } from "@/api/friends";
 import type { Channel } from "@/api/rooms";
 import AppSidebar from "@/features/navigation/AppSidebar";
 import ChatArea from "@/features/chat/ChatArea";
 import MemberList from "@/features/members/MemberList";
 import RoomDialog from "@/features/rooms/RoomDialog";
-import { useCreateChannel, useRoom, useRoomMembers, useRooms } from "@/features/rooms/queries";
+import { roomKeys, useCreateChannel, useRoom, useRoomMembers, useRooms } from "@/features/rooms/queries";
+import {
+  useAcceptFriendRequest,
+  useConversations,
+  useFriends,
+  useIncomingRequests,
+  useOpenConversation,
+  useSendFriendRequest,
+} from "@/features/friends/queries";
+import { useFriendEvents } from "@/features/friends/useFriendEvents";
+import MatchFoundDialog from "@/features/matchmaking/MatchFoundDialog";
+import PromptDialog from "@/components/ui/prompt-dialog";
+import { ApiError } from "@/api/client";
+import { toast } from "@/stores/toastStore";
+import { useMatchmaking } from "@/features/matchmaking/useMatchmaking";
 import { useVoiceSession } from "@/features/voice/useVoiceSession";
+import VoiceStage from "@/features/voice/VoiceStage";
 
 /**
  * Uygulama kabugu: ray + kanal paneli + icerik + uye listesi.
@@ -18,8 +35,11 @@ export function AppShell() {
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [membersVisible, setMembersVisible] = useState(true);
   const [roomDialogOpen, setRoomDialogOpen] = useState(false);
+  const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
+  const [prompt, setPrompt] = useState<"channel" | "friend" | null>(null);
 
   const voice = useVoiceSession();
+  const queryClient = useQueryClient();
 
   const roomsQuery = useRooms();
   const rooms = roomsQuery.data ?? [];
@@ -28,6 +48,18 @@ export function AppShell() {
   const roomQuery = useRoom(isRoomSection ? activeSection : null);
   const membersQuery = useRoomMembers(isRoomSection ? activeSection : null);
   const createChannel = useCreateChannel(activeSection);
+
+  const friendsQuery = useFriends();
+  const incomingQuery = useIncomingRequests();
+  const conversationsQuery = useConversations();
+  const openConversation = useOpenConversation();
+  const acceptRequest = useAcceptFriendRequest();
+  const sendFriendRequest = useSendFriendRequest();
+
+  // Arkadaslik ve DM olaylari cache'i tazeler.
+  useFriendEvents(true);
+
+  const matchmaking = useMatchmaking(true);
 
   const activeRoom = roomQuery.data ?? null;
 
@@ -48,16 +80,51 @@ export function AppShell() {
 
   const handleJoinVoice = useCallback(
     (channel: Channel) => {
-      if (activeRoom) voice.connect(channel.id, channel.name, activeRoom.name);
+      if (activeRoom) void voice.connect(channel.id, channel.name, activeRoom.name);
     },
     [activeRoom, voice],
   );
 
-  const handleCreateChannel = useCallback(() => {
-    const name = window.prompt("Kanal adı:");
-    if (!name?.trim()) return;
-    createChannel.mutate({ name: name.trim(), type: "TEXT" });
-  }, [createChannel]);
+  const handleOpenDmWith = useCallback(
+    async (userId: string) => {
+      const conversation = await openConversation.mutateAsync(userId);
+      setActiveSection("dms");
+      setActiveConversation(conversation);
+    },
+    [openConversation],
+  );
+
+  const handleAddFriend = useCallback(
+    (username: string) => {
+      sendFriendRequest.mutate(username, {
+        onSuccess: (friend) => {
+          toast.success(`${friend.displayName} kişisine istek gönderildi.`);
+          setPrompt(null);
+        },
+        onError: (error) =>
+          toast.error(error instanceof ApiError ? error.message : "İstek gönderilemedi."),
+      });
+    },
+    [sendFriendRequest],
+  );
+
+  const handleCreateChannel = useCallback(
+    (name: string) => {
+      createChannel.mutate(
+        { name, type: "TEXT" },
+        {
+          onSuccess: (channel) => {
+            toast.success(`#${channel.name} oluşturuldu.`);
+            setPrompt(null);
+            setActiveChannelId(channel.id);
+          },
+          onError: (error) =>
+            toast.error(error instanceof ApiError ? error.message : "Kanal oluşturulamadı."),
+        },
+      );
+    },
+    [createChannel],
+  );
 
   return (
     <div className="bg-[#1a1a1a] h-screen w-full flex items-center justify-center p-4">
@@ -70,8 +137,21 @@ export function AppShell() {
           activeChannelId={activeChannelId}
           onSelectChannel={(channel) => setActiveChannelId(channel.id)}
           onJoinVoice={handleJoinVoice}
-          onCreateChannel={handleCreateChannel}
+          onCreateChannel={() => setPrompt("channel")}
           onOpenRoomDialog={() => setRoomDialogOpen(true)}
+          friends={friendsQuery.data ?? []}
+          incomingRequests={incomingQuery.data ?? []}
+          conversations={conversationsQuery.data ?? []}
+          activeConversationId={activeConversation?.id ?? null}
+          onSelectConversation={setActiveConversation}
+          onOpenDmWith={(userId) => void handleOpenDmWith(userId)}
+          onAcceptFriendRequest={(id) => acceptRequest.mutate(id)}
+          onAddFriend={() => setPrompt("friend")}
+          games={matchmaking.games}
+          ticket={matchmaking.ticket}
+          queueElapsedSeconds={matchmaking.elapsedSeconds}
+          onJoinQueue={(gameId, partySize) => void matchmaking.joinQueue(gameId, partySize)}
+          onLeaveQueue={() => void matchmaking.leaveQueue()}
           voice={voice.session}
           onToggleMute={voice.toggleMute}
           onToggleDeafen={voice.toggleDeafen}
@@ -81,6 +161,7 @@ export function AppShell() {
 
         <ChatArea
           channel={activeChannel}
+          conversation={activeConversation}
           roomName={activeRoom?.name ?? ""}
           membersVisible={membersVisible}
           onToggleMembers={() => setMembersVisible((v) => !v)}
@@ -91,10 +172,49 @@ export function AppShell() {
           }
         />
 
-        {membersVisible && isRoomSection && membersQuery.data && (
+        {membersVisible && isRoomSection && !activeConversation && membersQuery.data && (
           <MemberList members={membersQuery.data} />
         )}
       </div>
+
+      {/* Uzak ses/ekran akislari; gorunur bir yeri yok ama olmadan ses duyulmaz. */}
+      <VoiceStage session={voice.session} />
+
+      <PromptDialog
+        open={prompt === "channel"}
+        title="Kanal oluştur"
+        description="Odaya yeni bir metin kanalı ekle."
+        label="Kanal adı"
+        placeholder="strateji"
+        submitLabel="Oluştur"
+        loading={createChannel.isPending}
+        onSubmit={handleCreateChannel}
+        onClose={() => setPrompt(null)}
+      />
+
+      <PromptDialog
+        open={prompt === "friend"}
+        title="Arkadaş ekle"
+        description="Kullanıcı adıyla istek gönder. E-posta paylaşmana gerek yok."
+        label="Kullanıcı adı"
+        placeholder="teoman"
+        submitLabel="İstek gönder"
+        loading={sendFriendRequest.isPending}
+        onSubmit={handleAddFriend}
+        onClose={() => setPrompt(null)}
+      />
+
+      <MatchFoundDialog
+        match={matchmaking.match}
+        onDismiss={matchmaking.dismissMatch}
+        onJoin={(match) => {
+          // Yeni gecici oda listede henuz yok; once tazele sonra gec.
+          void queryClient.invalidateQueries({ queryKey: roomKeys.all });
+          setActiveSection(match.roomId);
+          setActiveChannelId(match.textChannelId);
+          matchmaking.dismissMatch();
+        }}
+      />
 
       <RoomDialog
         open={roomDialogOpen}

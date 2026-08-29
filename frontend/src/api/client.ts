@@ -6,7 +6,9 @@
  * token HttpOnly cookie'de olduğu için JavaScript ona erişemez.
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
+// Bos varsayilan = ayni origin. Dev'de Vite, prod'da nginx vekillik yapar;
+// mutlak URL yalnizca API baska bir alan adindaysa gerekir.
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
 let accessToken: string | null = null;
 

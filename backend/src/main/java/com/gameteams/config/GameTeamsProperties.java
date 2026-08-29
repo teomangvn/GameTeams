@@ -14,7 +14,9 @@ public record GameTeamsProperties(
         String mailFrom,
         Cors cors,
         Jwt jwt,
-        Admin admin) {
+        Admin admin,
+        Webrtc webrtc,
+        Cookie cookie) {
 
     public record Cors(List<String> allowedOrigins) {
     }
@@ -24,5 +26,23 @@ public record GameTeamsProperties(
 
     /** Dev kolaylığı için açılışta seed edilen admin. password boşsa seeder çalışmaz. */
     public record Admin(String username, String email, String password) {
+    }
+
+    /**
+     * Refresh token cookie'si. secure=true yalnızca HTTPS üzerinden gönderilir;
+     * dev'de HTTP kullanıldığı için kapalı, prod'da açık olmalıdır.
+     */
+    public record Cookie(boolean secure, String sameSite) {
+    }
+
+    /**
+     * ICE sunucuları. STUN çoğu ağda yeter; symmetric NAT arkasındaki
+     * kullanıcılar için TURN relay şart (turnSecret boşsa TURN kapalıdır).
+     */
+    public record Webrtc(
+            List<String> stunUrls,
+            List<String> turnUrls,
+            String turnSecret,
+            Duration turnCredentialTtl) {
     }
 }

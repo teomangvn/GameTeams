@@ -20,8 +20,8 @@ import { cn } from "@/lib/utils";
 export interface VoiceControlBarProps {
   channelName: string;
   roomName: string;
-  /** Round-trip gecikme (ms). Bilinmiyorsa gizlenir. */
-  pingMs?: number;
+  /** Kanaldaki toplam kisi sayisi (kendisi dahil). */
+  participantCount?: number;
   muted: boolean;
   deafened: boolean;
   screenSharing: boolean;
@@ -68,7 +68,7 @@ function ControlButton({
 export function VoiceControlBar({
   channelName,
   roomName,
-  pingMs,
+  participantCount,
   muted,
   deafened,
   screenSharing,
@@ -83,7 +83,7 @@ export function VoiceControlBar({
         <SignalStrength size={16} className="text-emerald-500 shrink-0" />
         <div className="min-w-0 flex-1">
           <div className="font-lexend text-[12px] text-emerald-500 leading-tight">
-            Ses bağlandı{pingMs !== undefined && ` · ${pingMs} ms`}
+            Ses bağlandı{participantCount !== undefined && ` · ${participantCount} kişi`}
           </div>
           <div className="font-lexend text-[12px] text-neutral-400 truncate leading-tight">
             {channelName} / {roomName}

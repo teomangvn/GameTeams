@@ -61,6 +61,16 @@ public class User {
     @Column(name = "last_seen_at")
     private Instant lastSeenAt;
 
+    /**
+     * Devre disi birakilan hesap giris yapamaz. Kaydi silmek yerine
+     * isaretlemek, mesaj ve uyelik gecmisini bozmadan erisimi keser.
+     */
+    @Column(name = "disabled_at")
+    private Instant disabledAt;
+
+    @Column(name = "disabled_reason", length = 200)
+    private String disabledReason;
+
     protected User() {
         // JPA
     }
@@ -166,6 +176,28 @@ public class User {
 
     public Instant getLastSeenAt() {
         return lastSeenAt;
+    }
+
+    public Instant getDisabledAt() {
+        return disabledAt;
+    }
+
+    public String getDisabledReason() {
+        return disabledReason;
+    }
+
+    public boolean isDisabled() {
+        return disabledAt != null;
+    }
+
+    public void disable(String reason) {
+        this.disabledAt = Instant.now();
+        this.disabledReason = reason;
+    }
+
+    public void enable() {
+        this.disabledAt = null;
+        this.disabledReason = null;
     }
 
     public void setLastSeenAt(Instant lastSeenAt) {

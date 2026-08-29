@@ -24,6 +24,7 @@ import com.gameteams.auth.AuthDtos.UserResponse;
 import com.gameteams.auth.AuthDtos.VerifyEmailRequest;
 import com.gameteams.common.ApiException;
 import com.gameteams.common.RateLimiter;
+import com.gameteams.config.GameTeamsProperties;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -36,10 +37,13 @@ public class AuthController {
 
     private final AuthService authService;
     private final RateLimiter rateLimiter;
+    private final GameTeamsProperties.Cookie cookieConfig;
 
-    AuthController(AuthService authService, RateLimiter rateLimiter) {
+    AuthController(AuthService authService, RateLimiter rateLimiter,
+            GameTeamsProperties properties) {
         this.authService = authService;
         this.rateLimiter = rateLimiter;
+        this.cookieConfig = properties.cookie();
     }
 
     @PostMapping("/register")
@@ -149,21 +153,21 @@ public class AuthController {
                 .body(result.response());
     }
 
-    private static ResponseCookie refreshCookie(String value, Duration ttl) {
+    private ResponseCookie refreshCookie(String value, Duration ttl) {
         return baseRefreshCookie(value).maxAge(ttl).build();
     }
 
-    private static ResponseCookie expiredRefreshCookie() {
+    private ResponseCookie expiredRefreshCookie() {
         return baseRefreshCookie("").maxAge(Duration.ZERO).build();
     }
 
-    private static ResponseCookie.ResponseCookieBuilder baseRefreshCookie(String value) {
+    private ResponseCookie.ResponseCookieBuilder baseRefreshCookie(String value) {
         return ResponseCookie.from(REFRESH_COOKIE, value)
                 .httpOnly(true)
-                // Dev'de HTTP üzerinden çalışıldığı için secure kapalı; prod'da
-                // nginx TLS sonlandırdığından açılmalı (bkz. DEPLOYMENT).
-                .secure(false)
-                .sameSite("Lax")
+                // Dev HTTP uzerinden calisir, prod HTTPS. Sabit false birakilirsa
+                // prod'da cookie duz baglantida da gonderilirdi.
+                .secure(cookieConfig.secure())
+                .sameSite(cookieConfig.sameSite())
                 .path("/api/auth");
     }
 

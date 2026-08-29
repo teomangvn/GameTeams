@@ -4,17 +4,20 @@ import {
   UserMultiple,
   Chat,
   Settings as SettingsIcon,
+  Settings,
   Hashtag,
   VolumeUp,
   Add,
   Locked,
   Microphone,
+  MicrophoneOff,
   Headphones,
   UserFollow,
   Trophy,
   Time,
 } from "@carbon/icons-react";
 import { Gamepad2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 import type { Channel, RoomDetail, RoomSummary } from "@/api/rooms";
 import {
@@ -23,22 +26,20 @@ import {
   type SidebarPanel,
   type SidebarRailItem,
 } from "@/components/ui/sidebar-component";
-import { DM_CONVERSATIONS, FRIEND_IDS, GAMES, getUser } from "@/lib/mock-data";
+import type { Conversation, Friend, FriendRequest } from "@/api/friends";
+import type { Game, Ticket } from "@/api/matchmaking";
 import { VoiceControlBar } from "@/features/voice/VoiceControlBar";
 import type { VoiceSession } from "@/features/voice/useVoiceSession";
 import { useAuthStore } from "@/stores/authStore";
 
 const iconClass = "text-neutral-50";
 
-const statusDot: Record<string, string> = {
-  online: "bg-emerald-500",
-  idle: "bg-amber-400",
-  dnd: "bg-red-500",
-  offline: "bg-neutral-600",
-};
-
-function StatusDot({ status }: { status: string }) {
-  return <span className={`size-2 rounded-full ${statusDot[status]}`} />;
+function StatusDot({ online }: { online: boolean }) {
+  return (
+    <span
+      className={`size-2 rounded-full ${online ? "bg-emerald-500" : "bg-neutral-600"}`}
+    />
+  );
 }
 
 /** Oda adindan ray ikonu icin kisaltma uretir. */
@@ -52,12 +53,13 @@ function initialsOf(name: string): string {
 function buildRoomPanel(
   room: RoomDetail,
   activeChannelId: string | null,
+  voice: VoiceSession | null,
   onSelectChannel: (channel: Channel) => void,
   onJoinVoice: (channel: Channel) => void,
   onCreateChannel: () => void,
 ): SidebarPanel {
   const text = room.channels.filter((c) => c.type === "TEXT");
-  const voice = room.channels.filter((c) => c.type === "VOICE");
+  const voiceChannels = room.channels.filter((c) => c.type === "VOICE");
 
   const sections = [
     {
@@ -74,13 +76,33 @@ function buildRoomPanel(
     },
     {
       title: "Ses Kanalları",
-      items: voice.map<SidebarMenuItem>((c) => ({
-        id: c.id,
-        icon: <VolumeUp size={16} className={iconClass} />,
-        label: c.name,
-        badge: `0/${c.userLimit ?? 6}`,
-        onSelect: () => onJoinVoice(c),
-      })),
+      items: voiceChannels.map<SidebarMenuItem>((c) => {
+        // Doluluk yalnizca bagli olunan kanal icin bilinir; digerleri icin
+        // sunucudan ayrica cekmek gerekir (Phase 7'de eklenecek).
+        const connectedHere = voice?.channelId === c.id;
+        const occupants = connectedHere
+          ? [...voice.participants, { userId: "self", displayName: "Sen", muted: voice.muted }]
+          : [];
+
+        return {
+          id: c.id,
+          icon: <VolumeUp size={16} className={connectedHere ? "text-emerald-400" : iconClass} />,
+          label: c.name,
+          badge: connectedHere ? `${occupants.length}/${c.userLimit ?? 6}` : undefined,
+          onSelect: () => onJoinVoice(c),
+          children: occupants.length
+            ? occupants.map<SidebarMenuItem>((p) => ({
+                id: `${c.id}-${p.userId}`,
+                icon: p.muted ? (
+                  <MicrophoneOff size={14} className="text-red-400" />
+                ) : (
+                  <Microphone size={14} className="text-neutral-300" />
+                ),
+                label: p.displayName,
+              }))
+            : undefined,
+        };
+      }),
     },
   ];
 
@@ -114,95 +136,193 @@ function buildRoomPanel(
 
 /* --- Quick Match / arkadaslar / DM panolari henuz mock veriden besleniyor --- */
 
-function buildQuickMatchPanel(): SidebarPanel {
+function buildQuickMatchPanel(
+  games: Game[],
+  ticket: Ticket | null,
+  elapsedSeconds: number,
+  onJoinQueue: (gameId: string, partySize: number) => void,
+  onLeaveQueue: () => void,
+): SidebarPanel {
+  const queueSection = ticket
+    ? {
+        title: "Kuyruktasın",
+        items: [
+          {
+            id: "queue-status",
+            icon: <Time size={16} className="text-emerald-400" />,
+            label: `${ticket.gameName} · ${ticket.partySize} kişi`,
+            badge: formatDuration(elapsedSeconds),
+          },
+          {
+            id: "queue-rank",
+            icon: <Trophy size={16} className={iconClass} />,
+            label: ticket.rank ? `Rank: ${ticket.rank.name}` : "Rank belirtilmedi",
+          },
+          {
+            id: "queue-leave",
+            icon: <Locked size={16} className="text-red-400" />,
+            label: "Kuyruktan çık",
+            onSelect: onLeaveQueue,
+          },
+        ],
+      }
+    : {
+        title: "Kuyruğum",
+        items: [
+          {
+            id: "queue-empty",
+            icon: <Time size={16} className={iconClass} />,
+            label: "Kuyrukta değilsin",
+          },
+        ],
+      };
+
   return {
     title: "Quick Match",
     sections: [
+      queueSection,
       {
         title: "Oyun Seç",
-        items: GAMES.map<SidebarMenuItem>((g) => ({
+        items: games.map<SidebarMenuItem>((g) => ({
           id: g.id,
           icon: <Trophy size={16} className={iconClass} />,
           label: g.name,
-          badge: g.queued,
-          children: g.teamSizes.map<SidebarMenuItem>((size) => ({
+          // Takim boyutu secenekleri oyunun kendi sinirlarindan uretilir.
+          children: teamSizesOf(g).map<SidebarMenuItem>((size) => ({
             id: `${g.id}-${size}`,
             label: `${size} kişilik takım`,
+            onSelect: () => onJoinQueue(g.id, size),
           })),
         })),
       },
-      {
-        title: "Kuyruğum",
-        items: [
-          { id: "queue", icon: <Time size={16} className={iconClass} />, label: "Kuyrukta değilsin" },
-        ],
-      },
     ],
   };
 }
 
-function buildFriendsPanel(): SidebarPanel {
-  const friends = FRIEND_IDS.map(getUser);
-  const online = friends.filter((f) => f.status !== "offline");
-  const offline = friends.filter((f) => f.status === "offline");
-
-  return {
-    title: "Arkadaşlar",
-    sections: [
-      {
-        title: `Çevrimiçi — ${online.length}`,
-        items: online.map<SidebarMenuItem>((f) => ({
-          id: f.id,
-          icon: <StatusDot status={f.status} />,
-          label: f.playing ? `${f.displayName} · ${f.playing}` : f.displayName,
-        })),
-      },
-      {
-        title: `Çevrimdışı — ${offline.length}`,
-        items: offline.map<SidebarMenuItem>((f) => ({
-          id: f.id,
-          icon: <StatusDot status={f.status} />,
-          label: f.displayName,
-        })),
-      },
-      {
-        title: "İşlemler",
-        items: [
-          { id: "add-friend", icon: <UserFollow size={16} className={iconClass} />, label: "Arkadaş ekle" },
-        ],
-      },
-    ],
-  };
+function teamSizesOf(game: Game): number[] {
+  const sizes: number[] = [];
+  for (let size = game.minTeamSize; size <= game.maxTeamSize; size++) sizes.push(size);
+  return sizes;
 }
 
-function buildDmPanel(): SidebarPanel {
+function formatDuration(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function buildFriendsPanel(
+  friends: Friend[],
+  incoming: FriendRequest[],
+  onAddFriend: () => void,
+  onOpenDm: (userId: string) => void,
+  onAccept: (friendshipId: string) => void,
+): SidebarPanel {
+  const online = friends.filter((f) => f.online);
+  const offline = friends.filter((f) => !f.online);
+
+  const sections = [];
+
+  // Bekleyen istekler en ustte: aksiyon gerektiren tek bolum.
+  if (incoming.length > 0) {
+    sections.push({
+      title: `İstekler — ${incoming.length}`,
+      items: incoming.map<SidebarMenuItem>((r) => ({
+        id: r.friendshipId,
+        icon: <UserFollow size={16} className="text-amber-400" />,
+        label: `${r.displayName} · kabul et`,
+        onSelect: () => onAccept(r.friendshipId),
+      })),
+    });
+  }
+
+  sections.push(
+    {
+      title: `Çevrimiçi — ${online.length}`,
+      items: online.map<SidebarMenuItem>((f) => ({
+        id: f.userId,
+        icon: <StatusDot online />,
+        label: f.displayName,
+        onSelect: () => onOpenDm(f.userId),
+      })),
+    },
+    {
+      title: `Çevrimdışı — ${offline.length}`,
+      items: offline.map<SidebarMenuItem>((f) => ({
+        id: f.userId,
+        icon: <StatusDot online={false} />,
+        label: f.displayName,
+        onSelect: () => onOpenDm(f.userId),
+      })),
+    },
+    {
+      title: "İşlemler",
+      items: [
+        {
+          id: "add-friend",
+          icon: <UserFollow size={16} className={iconClass} />,
+          label: "Arkadaş ekle",
+          onSelect: onAddFriend,
+        },
+      ],
+    },
+  );
+
+  return { title: "Arkadaşlar", sections };
+}
+
+function buildDmPanel(
+  conversations: Conversation[],
+  activeConversationId: string | null,
+  onSelect: (conversation: Conversation) => void,
+): SidebarPanel {
   return {
     title: "Direkt Mesajlar",
     sections: [
       {
-        title: "Sohbetler",
-        items: DM_CONVERSATIONS.map<SidebarMenuItem>((d) => ({
-          id: d.id,
-          icon: <Chat size={16} className={iconClass} />,
-          label: getUser(d.userId).displayName,
-          badge: d.unread,
+        title: conversations.length ? "Sohbetler" : "Henüz sohbet yok",
+        items: conversations.map<SidebarMenuItem>((c) => ({
+          id: c.id,
+          icon: <StatusDot online={c.otherOnline} />,
+          label: c.otherDisplayName,
+          isActive: c.id === activeConversationId,
+          onSelect: () => onSelect(c),
         })),
       },
     ],
   };
 }
 
-function buildSettingsPanel(onLogout: () => void): SidebarPanel {
+function buildSettingsPanel(
+  isAdmin: boolean,
+  onOpenAdmin: () => void,
+  onLogout: () => void,
+): SidebarPanel {
+  const accountItems: SidebarMenuItem[] = [
+    { id: "s-profile", icon: <UserMultiple size={16} className={iconClass} />, label: "Profil" },
+  ];
+
+  // Yonetim baglantisi yalnizca yoneticilere gosterilir.
+  if (isAdmin) {
+    accountItems.push({
+      id: "s-admin",
+      icon: <Settings size={16} className="text-amber-400" />,
+      label: "Yönetim paneli",
+      onSelect: onOpenAdmin,
+    });
+  }
+
+  accountItems.push({
+    id: "s-logout",
+    icon: <Locked size={16} className={iconClass} />,
+    label: "Çıkış yap",
+    onSelect: onLogout,
+  });
+
   return {
     title: "Ayarlar",
     sections: [
-      {
-        title: "Hesap",
-        items: [
-          { id: "s-profile", icon: <UserMultiple size={16} className={iconClass} />, label: "Profil" },
-          { id: "s-logout", icon: <Locked size={16} className={iconClass} />, label: "Çıkış yap", onSelect: onLogout },
-        ],
-      },
+      { title: "Hesap", items: accountItems },
       {
         title: "Ses ve Görüntü",
         items: [
@@ -217,6 +337,19 @@ function buildSettingsPanel(onLogout: () => void): SidebarPanel {
 export interface AppSidebarProps {
   rooms: RoomSummary[];
   activeRoom: RoomDetail | null;
+  friends: Friend[];
+  incomingRequests: FriendRequest[];
+  conversations: Conversation[];
+  activeConversationId: string | null;
+  onSelectConversation: (conversation: Conversation) => void;
+  onOpenDmWith: (userId: string) => void;
+  onAcceptFriendRequest: (friendshipId: string) => void;
+  onAddFriend: () => void;
+  games: Game[];
+  ticket: Ticket | null;
+  queueElapsedSeconds: number;
+  onJoinQueue: (gameId: string, partySize: number) => void;
+  onLeaveQueue: () => void;
   activeSection: string;
   onSectionChange: (id: string) => void;
   activeChannelId: string | null;
@@ -234,6 +367,14 @@ export interface AppSidebarProps {
 export function AppSidebar({
   rooms,
   activeRoom,
+  friends,
+  incomingRequests,
+  conversations,
+  activeConversationId,
+  onSelectConversation,
+  onOpenDmWith,
+  onAcceptFriendRequest,
+  onAddFriend,
   activeSection,
   onSectionChange,
   activeChannelId,
@@ -246,15 +387,30 @@ export function AppSidebar({
   onToggleDeafen,
   onToggleScreenShare,
   onDisconnectVoice,
+  games,
+  ticket,
+  queueElapsedSeconds,
+  onJoinQueue,
+  onLeaveQueue,
 }: AppSidebarProps) {
   const [search, setSearch] = useState("");
   const authUser = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const navigate = useNavigate();
 
   const railItems = useMemo<SidebarRailItem[]>(
     () => [
-      { id: "quickmatch", icon: <Flash size={16} />, label: "Quick Match" },
-      { id: "friends", icon: <UserMultiple size={16} />, label: "Arkadaşlar" },
+      {
+        id: "quickmatch",
+        icon: <Flash size={16} className={ticket ? "text-emerald-400" : undefined} />,
+        label: ticket ? "Quick Match · kuyruktasın" : "Quick Match",
+      },
+      {
+        id: "friends",
+        icon: <UserMultiple size={16} />,
+        label: "Arkadaşlar",
+        badge: incomingRequests.length,
+      },
       { id: "dms", icon: <Chat size={16} />, label: "Direkt Mesajlar" },
       ...rooms.map<SidebarRailItem>((room, index) => ({
         id: room.id,
@@ -273,7 +429,7 @@ export function AppSidebar({
         separatorBefore: rooms.length === 0,
       },
     ],
-    [rooms],
+    [rooms, incomingRequests.length, ticket],
   );
 
   const panel = useMemo<SidebarPanel>(() => {
@@ -281,6 +437,7 @@ export function AppSidebar({
       return buildRoomPanel(
         activeRoom,
         activeChannelId,
+        voice,
         onSelectChannel,
         onJoinVoice,
         onCreateChannel,
@@ -289,21 +446,53 @@ export function AppSidebar({
 
     switch (activeSection) {
       case "friends":
-        return buildFriendsPanel();
+        return buildFriendsPanel(
+          friends,
+          incomingRequests,
+          onAddFriend,
+          onOpenDmWith,
+          onAcceptFriendRequest,
+        );
       case "dms":
-        return buildDmPanel();
+        return buildDmPanel(conversations, activeConversationId, onSelectConversation);
       case "settings":
-        return buildSettingsPanel(() => void logout());
+        return buildSettingsPanel(
+          authUser?.role === "ADMIN",
+          () => navigate("/admin"),
+          () => void logout(),
+        );
       default:
-        return buildQuickMatchPanel();
+        return buildQuickMatchPanel(
+          games,
+          ticket,
+          queueElapsedSeconds,
+          onJoinQueue,
+          onLeaveQueue,
+        );
     }
   }, [
     activeRoom,
     activeSection,
     activeChannelId,
+    voice,
+    friends,
+    incomingRequests,
+    conversations,
+    activeConversationId,
     onSelectChannel,
     onJoinVoice,
     onCreateChannel,
+    onSelectConversation,
+    onOpenDmWith,
+    onAcceptFriendRequest,
+    onAddFriend,
+    games,
+    ticket,
+    queueElapsedSeconds,
+    onJoinQueue,
+    onLeaveQueue,
+    authUser?.role,
+    navigate,
     logout,
   ]);
 
@@ -343,7 +532,7 @@ export function AppSidebar({
           <VoiceControlBar
             channelName={voice.channelName}
             roomName={voice.roomName}
-            pingMs={voice.pingMs}
+            participantCount={voice.participants.length + 1}
             muted={voice.muted}
             deafened={voice.deafened}
             screenSharing={voice.screenSharing}

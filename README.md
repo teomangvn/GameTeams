@@ -153,9 +153,179 @@ Erişim kuralları:
 - Odanın son kanalı silinemez, sahip odadan ayrılamaz (oda sahipsiz kalmasın).
 - Ses kanalı `userLimit` üst sınırı **8** — mesh WebRTC bunun üstünde pratik değil.
 
+## Mesajlaşma
+
+| Uç | Açıklama |
+|---|---|
+| `GET /api/channels/{id}/messages?cursor=` | Kanal geçmişi (keyset, 50'lik sayfa) |
+| `POST /api/channels/{id}/messages` | Mesaj gönder (REST yedek yolu) |
+| `PATCH /api/messages/{id}` | Kendi mesajını düzenle |
+| `DELETE /api/messages/{id}` | Kendi mesajını sil (yumuşak silme) |
+
+WebSocket (STOMP, `/ws`):
+
+| Hedef | Yön | İçerik |
+|---|---|---|
+| `/topic/channel.{id}` | abone | `MESSAGE_CREATED/EDITED/DELETED`, `TYPING` |
+| `/app/channel.{id}.send` | gönder | Yeni mesaj |
+| `/app/channel.{id}.typing` | gönder | Yazıyor bildirimi |
+| `/user/queue/errors` | abone | Yalnızca gönderene giden hatalar |
+
+Notlar:
+
+- Kimlik **CONNECT frame'inde** doğrulanır, handshake URL'inde değil: tarayıcı
+  WebSocket API'si özel başlık göndermeye izin vermez ve token'ı URL'e koymak
+  sunucu loglarına sızdırırdı.
+- **SUBSCRIBE ayrıca yetkilendirilir.** Spring'in bellek içi broker'ı abonelikleri
+  doğrulamaz; kanal id bilen herkes `/topic/channel.{id}` dinleyebilirdi.
+  Tanınmayan hedefler varsayılan olarak reddedilir.
+- Sayfalama **keyset** (`created_at`, `id`) ile yapılır; offset sonsuz scroll
+  sırasında yeni mesaj gelince kayar ve mesajları tekrarlar veya atlar.
+- Silme **yumuşaktır**: satır durur, içerik gizlenir — yanıt zinciri kırılmasın.
+
+## Ses Kanalları
+
+| Uç | Açıklama |
+|---|---|
+| `GET /api/webrtc/ice-servers` | STUN + zaman sınırlı TURN kimlik bilgileri |
+| `GET /api/voice/channels/{id}/participants` | Kanaldaki kişiler |
+| `/app/voice.{id}.join` \| `.leave` \| `.state` | STOMP: katıl / ayrıl / mute-deafen-ekran |
+| `/topic/voice.{id}` | `VOICE_JOINED`, `VOICE_LEFT`, `VOICE_STATE` |
+| `/app/signal` → `/user/queue/signal` | WebRTC SDP/ICE aktarımı |
+
+Mimari:
+
+- Ses **P2P mesh** akar; sunucu sesi taşımaz, yalnızca kimin nerede olduğunu
+  bilir ve SDP/ICE paketlerini iletir.
+- **Teklif kuralı deterministik**: id'si küçük olan taraf teklif başlatır.
+  İki taraf aynı anda teklif ederse "glare" oluşur ve el sıkışma başarısız olur.
+- **Signaling yetkilendirilir**: gönderen ve alıcı aynı ses kanalında değilse
+  paket iletilmez. `fromUserId` sunucu tarafından doldurulur (kimlik taklidi önlemi).
+- Ses durumu **Redis'te**; kalıcı olması gerekmiyor ve sunucu yeniden başlarsa
+  hayalet katılımcı kalmaz. Bağlantı koptuğunda kullanıcı otomatik düşürülür.
+- Aynı anda **tek ses kanalı**: başka kanala katılınca öncekinden çıkarılır ve
+  oradaki peer'lara ayrılma duyurulur.
+- **TURN zorunlu** (prod): kullanıcıların bir kısmı symmetric NAT arkasındadır
+  ve P2P kuramaz. Kimlik bilgileri statik değil, coturn `use-auth-secret` ile
+  12 saatlik HMAC imzalı üretilir.
+
+## Arkadaşlar ve DM
+
+| Uç | Açıklama |
+|---|---|
+| `GET /api/friends` | Arkadaş listesi (çevrimiçi durumuyla) |
+| `GET /api/friends/requests/incoming` \| `/outgoing` | Bekleyen istekler |
+| `POST /api/friends/requests` | Kullanıcı adıyla istek gönder |
+| `POST /api/friends/requests/{id}/accept` | Kabul et |
+| `DELETE /api/friends/requests/{id}` | Reddet |
+| `DELETE /api/friends/{userId}` | Arkadaşlıktan çıkar |
+| `GET/POST /api/conversations` | DM listesi / sohbet aç |
+| `GET/POST /api/conversations/{id}/messages` | DM geçmişi / gönder |
+| `/user/queue/friends` \| `/user/queue/dm` | Arkadaşlık olayları / gelen DM |
+
+Kurallar:
+
+- **Sadece arkadaşlar DM atabilir.** Aksi halde herkes herkese mesaj gönderebilir
+  ve bu bir spam kanalı olur. Arkadaşlık bitse de mevcut sohbet geçmişi korunur.
+- **Karşılıklı istek otomatik kabul olur**: A→B beklerken B→A gelirse yeni kayıt
+  açmak yerine mevcut istek kabul edilir; aksi halde iki taraf da diğerinin
+  onayını beklerdi.
+- **Engellenen ilişki kendini ele vermez**: engellenmiş kullanıcıya istek
+  gönderildiğinde hata değil normal yanıt döner.
+- Kullanıcı çifti **sıralı saklanır** (`user_a_id < user_b_id`), böylece aynı
+  ikili için iki ayrı sohbet oluşması veritabanı seviyesinde imkânsızdır.
+- Çevrimiçi durumu Redis'te **TTL ile** tutulur; disconnect olayı kaçırılsa bile
+  kullanıcı sonsuza dek çevrimiçi görünmez.
+
+## Quick Match
+
+| Uç | Açıklama |
+|---|---|
+| `GET /api/games` | Oyunlar ve rank kademeleri |
+| `GET/PUT /api/me/game-profiles[/{gameId}]` | Oyun profili (rank, oyun içi ad) |
+| `GET /api/matchmaking/ticket` | Aktif bilet (kuyrukta değilse 204) |
+| `POST /api/matchmaking/queue` | Kuyruğa gir |
+| `DELETE /api/matchmaking/queue` | Kuyruktan çık |
+| `/user/queue/matchmaking` | `MATCH_FOUND` |
+
+Eşleştirme algoritması:
+
+- **Kesin eşleşen kriterler**: oyun, takım boyutu, bölge, dil. Yalnızca rank
+  toleransla esnetilir.
+- **Rank toleransı zamanla genişler**: `1 + floor(beklemeSaniyesi / 30)`, tavan 5.
+  Böylece nadir rank'taki oyuncu sonsuza kadar beklemez ama ilk saniyelerde
+  eşleşme mümkün olduğunca dar tutulur. Tavan olmasaydı uzun bekleyen oyuncu
+  her rank ile eşleşirdi.
+- **Çapa en eski bilettir**: kuyrukta bekleme süresi adil dağılsın diye.
+- **Postgres advisory lock**: ileride birden fazla uygulama örneği çalışsa bile
+  aynı bilet iki farklı maça giremez.
+- Eşleşince **geçici oda** açılır (bir metin + bir ses kanalı), katılımcılar üye
+  yapılır ve herkese `MATCH_FOUND` gider. Boş kalan geçici odalar 30 dakika
+  sonra temizlenir.
+- Kullanıcı başına **tek aktif bilet** — kısmi benzersiz indeks ile veritabanı
+  seviyesinde zorlanır.
+
+## Yönetim
+
+| Uç | Açıklama |
+|---|---|
+| `GET /api/admin/stats` | Kullanıcı, oda, mesaj sayıları |
+| `GET /api/admin/users?q=&page=` | Kullanıcı listesi ve arama |
+| `POST /api/admin/users/{id}/disable` \| `/enable` | Hesabı devre dışı bırak / aç |
+| `GET /api/admin/rooms` | Oda listesi |
+| `DELETE /api/admin/rooms/{id}` | Odayı sil |
+
+Hepsi `ROLE_ADMIN` gerektirir. Arayüz `/admin` adresinde, giriş bağlantısı
+yalnızca yöneticilerin ayarlar panelinde görünür.
+
+Kurallar:
+
+- **Devre dışı bırakmak oturumları da kapatır.** Yalnızca işaretlemek yetmez;
+  kullanıcı elindeki refresh token ile 30 gün daha oturum açabilirdi. Access
+  token'ı süresi dolana kadar (15 dk) geçerli kalır — bu bilinçli bir takas.
+- **Yönetici hesapları devre dışı bırakılamaz** ve admin kendini kilitleyemez;
+  aksi halde sistemi yönetecek kimse kalmayabilir.
+- Hesap silinmez, işaretlenir: mesajlar, oda üyelikleri ve maçlar bozulmaz.
+- Sayfa boyutu 100 ile sınırlıdır; aksi halde tek istekle tüm tablo çekilebilirdi.
+
+## Production Deploy
+
+Ayrıntılı adımlar: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+
+```bash
+# EC2 üzerinde, /opt/gameteams içinde
+cp .env.example .env && nano .env    # DOMAIN, JWT_SECRET, TURN_SECRET, SES...
+./scripts/deploy.sh
+```
+
+Mimari notlar:
+
+- **Tek origin**: nginx hem frontend'i hem `/api` ve `/ws`'i aynı alan adı
+  altında sunar. Bu CORS'u tamamen ortadan kaldırır ve refresh cookie'sinin
+  `SameSite=Lax` ile sorunsuz çalışmasını sağlar. Dev'de Vite aynı işi
+  proxy ile yapar, böylece iki ortam aynı şekilde davranır.
+- **`COOKIE_SECURE=true` prod'da zorunlu** — aksi halde refresh cookie'si düz
+  HTTP üzerinden de gönderilir.
+- Backend imajı **katmanlı jar** kullanır: bağımlılıklar ayrı katmanda, kod
+  değişiminde yalnızca küçük katman yeniden yüklenir. Konteyner **root
+  olmayan** kullanıcıyla çalışır ve `HEALTHCHECK` tanımlıdır.
+- `deploy.sh` deploy öncesi `.env` içindeki sırların placeholder olmadığını
+  doğrular; yoksa üretim tahmin edilebilir bir JWT anahtarıyla çalışabilirdi.
+- **nginx `/ws` için `proxy_read_timeout 3600s`** — varsayılan 60 saniye ile
+  boşta duran STOMP bağlantıları sürekli kopar.
+
+### Yerel Docker build ve TLS kesintisi
+
+Antivirüs HTTPS'i kesiyorsa (bkz. Sorun Giderme) konteyner içindeki `npm` ve
+`mvn` de paket indiremez — hata `UNABLE_TO_VERIFY_LEAF_SIGNATURE` olarak görünür
+(npm 10 bunu yanıltıcı bir "Exit handler never called" mesajıyla gizler).
+Sunucuda böyle bir kesinti olmadığı için Dockerfile'lara kalıcı bir çözüm
+eklenmedi; yerelde denemek isterseniz kök sertifikayı build aşamasına geçici
+olarak enjekte edin.
+
 ## Durum
 
-Phase 0-2 tamam:
+Tüm aşamalar tamam:
 
 - [x] Repo yapısı, `.gitignore`, `.env.example`
 - [x] Dev altyapısı (Postgres, Redis, Mailpit)
@@ -164,9 +334,9 @@ Phase 0-2 tamam:
 - [x] Frontend kabuğu — ray, kanal paneli, sohbet, üye listesi, ses çubuğu
 - [x] Phase 1 — kayıt, e-posta doğrulama, giriş, token rotasyonu, şifre sıfırlama, admin seed
 - [x] Phase 2 — odalar, kanallar, davet kodu, üyelik ve sahiplik kontrolleri
-- [ ] Phase 3 — metin sohbeti (STOMP)
-- [ ] Phase 4 — ses kanalları (WebRTC mesh + ekran paylaşımı)
-- [ ] Phase 5 — arkadaşlar ve DM
-- [ ] Phase 6 — Quick Match
-- [ ] Phase 7 — cila ve admin paneli
-- [ ] Phase 8 — prod compose, nginx + TLS, AWS deploy
+- [x] Phase 3 — metin sohbeti (STOMP), keyset geçmiş, typing, düzenle/sil
+- [x] Phase 4 — ses kanalları (WebRTC mesh, signaling, ekran paylaşımı, coturn)
+- [x] Phase 5 — arkadaş sistemi, DM, presence
+- [x] Phase 6 — Quick Match (oyun profilleri, kuyruk, eşleştirici, geçici oda)
+- [x] Phase 7 — toast bildirimleri, gerçek diyaloglar, admin paneli
+- [x] Phase 8 — prod Dockerfile'lar, nginx + TLS, coturn, deploy scriptleri, AWS runbook

@@ -126,6 +126,12 @@ public class AuthService {
                 .orElseThrow(() -> ApiException.unauthorized(
                         "INVALID_CREDENTIALS", "E-posta veya şifre hatalı."));
 
+        // Devre disi hesap once kontrol edilir: dogrulanmamis e-posta mesaji
+        // yaniltici olurdu.
+        if (user.isDisabled()) {
+            throw ApiException.forbidden("ACCOUNT_DISABLED", "Hesabın devre dışı bırakıldı.");
+        }
+
         if (!user.isEmailVerified()) {
             throw ApiException.forbidden("EMAIL_NOT_VERIFIED",
                     "Giriş yapabilmek için önce e-postanı doğrulaman gerekiyor.");
@@ -157,6 +163,13 @@ public class AuthService {
         if (!stored.isUsable()) {
             throw ApiException.unauthorized("INVALID_REFRESH_TOKEN",
                     "Oturumun süresi dolmuş. Tekrar giriş yap.");
+        }
+
+        // Devre disi birakilan hesap, elindeki refresh token ile oturumunu
+        // uzatamamali; aksi halde 30 gun boyunca erisimi surerdi.
+        if (stored.getUser().isDisabled()) {
+            revoker.revokeAllForUser(stored.getUser());
+            throw ApiException.forbidden("ACCOUNT_DISABLED", "Hesabin devre disi birakildi.");
         }
 
         stored.revoke();

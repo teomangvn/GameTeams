@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import { authApi, type AuthUser } from "@/api/auth";
 import { setAccessToken } from "@/api/client";
+import { disconnectStomp } from "@/lib/stompClient";
 
 interface AuthState {
   user: AuthUser | null;
@@ -23,6 +24,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
+    // Once soketi kapat: token gecersizlestikten sonra yeniden baglanma
+    // denemeleri bos yere hata uretir.
+    disconnectStomp();
     await authApi.logout();
     set({ user: null });
   },

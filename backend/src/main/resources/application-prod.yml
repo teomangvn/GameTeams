@@ -18,6 +18,12 @@ management:
     health:
       show-details: never
 
+gameteams:
+  cookie:
+    # Prod'da her sey HTTPS uzerinden; cookie duz HTTP'de gonderilmemeli.
+    secure: true
+    same-site: Lax
+
 logging:
   level:
     root: INFO

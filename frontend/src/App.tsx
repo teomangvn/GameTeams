@@ -2,12 +2,15 @@ import { useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
+import AdminPage from '@/features/admin/AdminPage'
 import AppShell from '@/features/shell/AppShell'
 import ForgotPasswordPage from '@/features/auth/ForgotPasswordPage'
 import LoginPage from '@/features/auth/LoginPage'
 import RegisterPage from '@/features/auth/RegisterPage'
 import ResetPasswordPage from '@/features/auth/ResetPasswordPage'
 import VerifyEmailPage from '@/features/auth/VerifyEmailPage'
+import Toaster from '@/components/ui/toaster'
+import AdminRoute from '@/routes/AdminRoute'
 import ProtectedRoute from '@/routes/ProtectedRoute'
 import { useAuthStore } from '@/stores/authStore'
 
@@ -46,9 +49,19 @@ export default function App() {
             }
           />
 
+          <Route
+            path="/admin"
+            element={
+              <AdminRoute>
+                <AdminPage />
+              </AdminRoute>
+            }
+          />
+
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
+      <Toaster />
     </QueryClientProvider>
   )
 }
