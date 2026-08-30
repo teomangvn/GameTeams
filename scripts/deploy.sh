@@ -54,6 +54,20 @@ echo "==> Yapilandirma dosyalari guncelleniyor"
 git fetch --quiet origin
 git reset --hard --quiet origin/main
 
+# Yukaridaki reset bu betigin kendisini de degistirmis olabilir. Bash betikleri
+# bayt ofseti ile artimli okur: calisma sirasinda degisen bir dosyada eski
+# surum calismaya devam eder, ofset kayarsa yarim bir satir bile calisabilir.
+# Ilk CI deploy'unda tam bu oldu - eski saglik kontrolu http://localhost'a
+# gidip nginx'ten 301 aldi ve tamamen saglikli bir deploy 5 dakika sonra
+# basarisiz sayildi. Guncel surumu bastan calistir; DEPLOY_REEXEC sonsuz
+# donguyu engeller. Bu noktaya kadar hicbir yan etki olusmadi (yedek ve
+# compose islemleri asagida), yani bastan baslamak guvenli.
+if [[ "${DEPLOY_REEXEC:-}" != "1" ]]; then
+  export DEPLOY_REEXEC=1
+  echo "==> Betik guncellendi, yeni surum calistiriliyor"
+  exec "$PWD/scripts/deploy.sh" "$@"
+fi
+
 echo "==> Veritabani yedegi aliniyor (geri donus icin)"
 ./scripts/backup-db.sh || echo "UYARI: yedek alinamadi, devam ediliyor"
 
