@@ -87,7 +87,9 @@
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
+    /* Uygulama kabugunun cerceve rengi (#1a1a1a) ile ayni; boylece govde,
+       kaydirma tasmasi ve mobil esneme alani ayni tonu gosterir. */
+    --background: oklch(0.1776 0 0);
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.205 0 0);
     --card-foreground: oklch(0.985 0 0);
@@ -123,11 +125,18 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    }
+  }
+
+  html {
+    @apply font-sans bg-background;
+    /* Tarayici kaydirma cubuklarini ve form kontrollerini koyu temaya alir. */
+    color-scheme: dark;
+  }
+
   body {
     @apply bg-background text-foreground;
-    }
-  html {
-    @apply font-sans;
-    }
+    /* React monte olmadan once de koyu boyansin: aksi halde her sayfa
+       yuklenisinde beyaz bir parlama gorunur. */
+    min-height: 100vh;
+  }
 }

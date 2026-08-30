@@ -24,6 +24,7 @@ import { toast } from "@/stores/toastStore";
 import { useMatchmaking } from "@/features/matchmaking/useMatchmaking";
 import { useVoiceSession } from "@/features/voice/useVoiceSession";
 import VoiceStage from "@/features/voice/VoiceStage";
+import AppBackground from "@/features/shell/AppBackground";
 
 /**
  * Uygulama kabugu: ray + kanal paneli + icerik + uye listesi.
@@ -127,8 +128,9 @@ export function AppShell() {
   );
 
   return (
-    <div className="bg-[#1a1a1a] h-screen w-full flex items-center justify-center p-4">
-      <div className="h-full w-full max-w-[1600px] flex rounded-2xl overflow-hidden">
+    <div className="relative bg-[#1a1a1a] h-screen w-full flex items-center justify-center p-4">
+      <AppBackground />
+      <div className="relative h-full w-full max-w-[1600px] flex rounded-2xl overflow-hidden">
         <AppSidebar
           rooms={rooms}
           activeRoom={activeRoom}

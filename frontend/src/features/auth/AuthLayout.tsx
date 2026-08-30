@@ -2,6 +2,7 @@ import type React from "react";
 import { Gamepad2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import AppBackground from "@/features/shell/AppBackground";
 
 /** Kimlik ekranlarının ortak çerçevesi. */
 export function AuthLayout({
@@ -16,8 +17,9 @@ export function AuthLayout({
   footer?: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-[#1a1a1a] flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className="relative min-h-screen bg-[#1a1a1a] flex items-center justify-center p-4">
+      <AppBackground />
+      <div className="relative w-full max-w-md">
         <div className="flex items-center gap-2 justify-center mb-8">
           <Gamepad2 className="size-7 text-neutral-50" strokeWidth={2} />
           <span className="font-lexend font-semibold text-[20px] text-neutral-50">
