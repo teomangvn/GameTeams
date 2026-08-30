@@ -23,19 +23,34 @@ services:
       context: ./backend
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      # Konteynerde ../.env okunamaz (WORKDIR=/app); butun yapilandirma
+      # ortam degiskenleriyle gecilmeli. Eksik birakilan degisken sessizce
+      # application.yml varsayilanina duser -- veritabani sifresi icin bu
+      # baglanti hatasi demektir.
       DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
       REDIS_HOST: redis
+      REDIS_PORT: 6379
       APP_URL: ${APP_URL}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
       JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-PT15M}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-P30D}
       MAIL_HOST: ${MAIL_HOST}
       MAIL_PORT: ${MAIL_PORT}
       MAIL_USERNAME: ${MAIL_USERNAME}
       MAIL_PASSWORD: ${MAIL_PASSWORD}
       MAIL_FROM: ${MAIL_FROM}
+      STUN_URLS: ${STUN_URLS}
       TURN_URLS: ${TURN_URLS}
       TURN_SECRET: ${TURN_SECRET}
-      # Seeder prod'da devre disi: ADMIN_PASSWORD tanimlanmaz.
+      TURN_TTL: ${TURN_TTL:-PT12H}
+      # ADMIN_PASSWORD bilerek gecilmiyor: tanimsiz oldugunda AdminUserSeeder
+      # calismaz. Prod'da admin hesabi seed edilmemeli; hesap kayit akisiyla
+      # olusturulup veritabanindan role='ADMIN' yapilir.
     depends_on:
       postgres:
         condition: service_healthy
