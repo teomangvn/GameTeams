@@ -106,31 +106,20 @@ jobs:
     name: Sunucuya deploy
     needs: build
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    # Sunucunun kendisinde kosar. GitHub'in barindirdigi kosucular Azure IP
+    # havuzundan geliyor; gameteams-sg 22 numarali portu yalnizca sabit bir
+    # IP'ye actigi icin disaridan SSH zaman asimina ugruyordu. Self-hosted
+    # runner disari dogru baglandigindan hicbir portu acmak gerekmiyor ve
+    # deploy sirlari (SSH anahtari, host, kullanici) tamamen ortadan kalkiyor.
+    runs-on: [self-hosted, gameteams]
     # Ayni anda iki deploy calismasin; ikincisi birincinin bitmesini bekler.
     concurrency:
       group: production-deploy
       cancel-in-progress: false
     steps:
-      - name: SSH anahtarini hazirla
-        env:
-          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
-        run: |
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
-          # Host anahtari secret'tan gelir; ssh-keyscan her calismada yeniden
-          # guvenmek anlamina gelir ve MITM'e acik kalirdi.
-          printf '%s\n' "$HOST_KEY" > ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
-
+      # actions/checkout yok: deploy.sh zaten /opt/gameteams icinde
+      # origin/main'e sifirlaniyor, kosucunun ayri bir kopyasi gereksiz.
       - name: Deploy
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           IMAGE_TAG: ${{ needs.build.outputs.tag }}
-        run: |
-          ssh -i ~/.ssh/id_deploy -o BatchMode=yes \
-            "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "cd /opt/gameteams && IMAGE_TAG='${IMAGE_TAG}' ./scripts/deploy.sh --pull"
+        run: cd /opt/gameteams && ./scripts/deploy.sh --pull
