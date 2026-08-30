@@ -17,6 +17,10 @@
 	<properties>
 		<java.version>21</java.version>
 		<jjwt.version>0.12.6</jjwt.version>
+		<!-- Boot 3.5.3 BOM'u 1.21.2 getiriyor; o surumun docker-java istemcisi
+		     Docker Desktop 29'un API proxy'sine /info cagrisinda takiliyor ve
+		     testler yerelde sessizce atlaniyordu. -->
+		<testcontainers.version>1.21.4</testcontainers.version>
 	</properties>
 
 	<dependencies>

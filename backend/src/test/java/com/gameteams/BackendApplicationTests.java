@@ -7,7 +7,10 @@ import org.springframework.context.annotation.Import;
 import org.testcontainers.DockerClientFactory;
 
 @Import(TestcontainersConfiguration.class)
-@SpringBootTest
+// Duman testi deploy sirlarina bagli olmamali. Yerelde deger kok dizindeki
+// .env'den geliyordu (application.yml onu optional olarak import ediyor), CI'da
+// boyle bir dosya yok ve JwtService baglami kurulmadan hata firlatiyordu.
+@SpringBootTest(properties = "gameteams.jwt.secret=test-only-secret-not-used-in-production-0123456789")
 @EnabledIf("dockerAvailable")
 class BackendApplicationTests {
 
