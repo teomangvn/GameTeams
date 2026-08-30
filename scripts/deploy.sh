@@ -70,9 +70,16 @@ else
 fi
 
 echo "==> Saglik kontrolu"
+# nginx 80 portunda ACME yolu disindaki her seyi 443'e yonlendirir; duz HTTP
+# ile sorgulamak 301 doner ve saglikli deploy bile basarisiz gorunurdu.
+# --resolve ile alan adi 127.0.0.1'e cozulur, boylece TLS dogrulamasi gercek
+# sertifikaya karsi yapilir ve -k ile dogrulamayi kapatmaya gerek kalmaz.
+health_domain="$(grep -E '^DOMAIN=' .env | cut -d= -f2-)"
+health_url="https://${health_domain}/actuator/health/readiness"
+
 # Flyway migration'lari backend acilisinda otomatik uygulanir.
 for attempt in $(seq 1 60); do
-  if curl -fsS http://localhost/actuator/health/readiness 2>/dev/null | grep -q '"status":"UP"'; then
+  if curl -fsS --resolve "${health_domain}:443:127.0.0.1" "$health_url" 2>/dev/null | grep -q '"status":"UP"'; then
     echo "Deploy tamam."
     $COMPOSE ps
     # Eski imajlar diski doldurmasin.
