@@ -2,6 +2,10 @@
 #
 # Ayni origin olmasi CORS'u tamamen ortadan kaldirir ve refresh cookie'sinin
 # SameSite=Lax ile sorunsuz calismasini saglar.
+#
+# Bu bir SABLON: nginx imaji acilista ${DOMAIN} yerine ortam degiskenini yazar
+# (NGINX_ENVSUBST_FILTER=DOMAIN ile yalnizca bu degisken degistirilir, $host
+# gibi nginx degiskenlerine dokunulmaz). Elle duzenlemeyin.
 
 upstream backend  { server backend:8080; }
 upstream frontend { server frontend:80; }

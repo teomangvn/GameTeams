@@ -56,37 +56,62 @@ gönderilir.
 
 ## 4. DNS ve TLS
 
-Route53'te `DOMAIN` için Elastic IP'ye A kaydı açın, yayılmasını bekleyin.
+Route53'te `DOMAIN` için Elastic IP'ye A kaydı açın, yayılmasını bekleyin:
 
 ```bash
-# Sertifika alınırken 80 portu boş olmalı
-docker compose -f docker-compose.yml -f docker-compose.prod.yml down nginx || true
-
-sudo docker run --rm -p 80:80 \
-  -v /opt/gameteams/infra/certbot/conf:/etc/letsencrypt \
-  -v /opt/gameteams/infra/certbot/www:/var/www/certbot \
-  certbot/certbot certonly --standalone -d "$DOMAIN" \
-  --agree-tos -m "$ADMIN_CONTACT_EMAIL" --no-eff-email
+dig +short "$DOMAIN"    # Elastic IP'yi göstermeli
 ```
 
-`infra/nginx/default.conf` içindeki `${DOMAIN}` yerine alan adınızı yazın
-(veya `envsubst` ile üretin).
+### İlk sertifika
 
-Otomatik yenileme:
+Tavuk-yumurta durumu: nginx sertifika olmadan başlamaz, certbot da doğrulama
+için 80 portuna ihtiyaç duyar. Bu yüzden ilk sertifika nginx kapalıyken
+`--standalone` ile alınır:
 
 ```bash
-echo "0 3 * * 0 cd /opt/gameteams && docker run --rm -v /opt/gameteams/infra/certbot/conf:/etc/letsencrypt -v /opt/gameteams/infra/certbot/www:/var/www/certbot certbot/certbot renew --quiet && docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx" | crontab -
+cd /opt/gameteams
+set -a; source .env; set +a
+
+docker run --rm -p 80:80   -v /opt/gameteams/infra/certbot/conf:/etc/letsencrypt   -v /opt/gameteams/infra/certbot/www:/var/www/certbot   certbot/certbot certonly --standalone -d "$DOMAIN"   --agree-tos -m "$ADMIN_CONTACT_EMAIL" --no-eff-email
 ```
+
+nginx yapılandırmasını **elle düzenlemeyin** — `infra/nginx/default.conf.template`
+bir şablondur, nginx konteyneri açılışta `${DOMAIN}` yerine `.env` içindeki
+değeri yazar.
+
+### Yenileme
+
+nginx ayağa kalktıktan sonra yenilemeler **webroot** ile yapılır; `--standalone`
+80 portunu ister ve nginx çalışırken bunu alamaz. İlk yenilemeyi elle çalıştırıp
+certbot'un kayıtlı yöntemini webroot'a çevirin:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+docker run --rm   -v /opt/gameteams/infra/certbot/conf:/etc/letsencrypt   -v /opt/gameteams/infra/certbot/www:/var/www/certbot   certbot/certbot certonly --webroot -w /var/www/certbot -d "$DOMAIN"   --agree-tos -m "$ADMIN_CONTACT_EMAIL" --no-eff-email --force-renewal
+```
+
+Sonra haftalık cron:
+
+```bash
+( crontab -l 2>/dev/null; echo '0 3 * * 0 cd /opt/gameteams && docker run --rm -v /opt/gameteams/infra/certbot/conf:/etc/letsencrypt -v /opt/gameteams/infra/certbot/www:/var/www/certbot certbot/certbot renew --webroot -w /var/www/certbot --quiet && docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T nginx nginx -s reload' ) | crontab -
+```
+
+`nginx -s reload` yeniden başlatmaz; açık WebSocket bağlantıları kopmaz.
 
 ## 5. coturn
 
-`infra/coturn/turnserver.conf` içindeki üç placeholder'ı doldurun:
+Yapılandırma dosyasında doldurulacak bir şey yok — sır, realm ve dış IP
+`docker-compose.prod.yml` içinden komut satırıyla geçilir. `.env` içine:
 
-- `__TURN_SECRET__` → `.env` içindeki `TURN_SECRET` ile **aynı**
-- `__TURN_REALM__` → alan adınız
-- `__EXTERNAL_IP__` → Elastic IP
+```
+TURN_SECRET=<openssl rand -hex 32 çıktısı>
+TURN_EXTERNAL_IP=<Elastic IP>
+TURN_URLS=turn:<DOMAIN>:3478
+```
 
-`.env` içinde: `TURN_URLS=turn:<DOMAIN>:3478`
+`TURN_SECRET` hem coturn'e hem backend'e aynı `.env`'den gider; iki yerde
+farklı olursa tarayıcı TURN'e kimlik doğrulayamaz ve ses kurulmaz.
 
 ## 6. AWS SES
 

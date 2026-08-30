@@ -38,6 +38,13 @@ cd backend && ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
 cd frontend && npm install && npm run dev
 ```
 
+Testler:
+
+```bash
+cd backend  && ./mvnw verify   # 51 test
+cd frontend && npm test        # vitest
+```
+
 ### Portlar
 
 | Servis | Adres |
@@ -193,6 +200,12 @@ Notlar:
 | `/topic/voice.{id}` | `VOICE_JOINED`, `VOICE_LEFT`, `VOICE_STATE` |
 | `/app/signal` → `/user/queue/signal` | WebRTC SDP/ICE aktarımı |
 
+> **Ses kanalları HTTPS gerektirir.** Tarayıcılar `getUserMedia` ve
+> `getDisplayMedia`'yı yalnızca güvenli bağlamda (`https://` veya `localhost`)
+> açar. Düz `http://<IP>` üzerinde `navigator.mediaDevices` tanımsızdır ve izin
+> bile sorulmaz — bu yüzden production'da alan adı ve TLS zorunludur.
+> Uygulama bu durumu ayırt edip "HTTPS gerekiyor" uyarısı gösterir.
+
 Mimari:
 
 - Ses **P2P mesh** akar; sunucu sesi taşımaz, yalnızca kimin nerede olduğunu
@@ -290,12 +303,23 @@ Kurallar:
 
 ## Production Deploy
 
-Ayrıntılı adımlar: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+Ayrıntılı adımlar: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) ·
+Otomatik deploy: [docs/CI-CD.md](docs/CI-CD.md)
+
+`main` dalına push edildiğinde GitHub Actions testleri koşar, imajları GHCR'a
+iter ve sunucu yeni sürümü çeker. Testler kırmızıysa deploy çalışmaz.
 
 ```bash
-# EC2 üzerinde, /opt/gameteams içinde
+# EC2 üzerinde, /opt/gameteams içinde — yalnızca ilk kurulum
 cp .env.example .env && nano .env    # DOMAIN, JWT_SECRET, TURN_SECRET, SES...
-./scripts/deploy.sh
+./scripts/deploy.sh --pull           # CI'nın ittiği imajları çeker
+```
+
+Sonraki deploy'lar otomatiktir. Elle müdahale gerekirse:
+
+```bash
+IMAGE_TAG=<commit-sha> ./scripts/deploy.sh --pull   # belirli sürüme dön
+./scripts/deploy.sh                  # imajları sunucuda derle (CI yoksa)
 ```
 
 Mimari notlar:
@@ -313,6 +337,8 @@ Mimari notlar:
   doğrular; yoksa üretim tahmin edilebilir bir JWT anahtarıyla çalışabilirdi.
 - **nginx `/ws` için `proxy_read_timeout 3600s`** — varsayılan 60 saniye ile
   boşta duran STOMP bağlantıları sürekli kopar.
+- **İmajlar CI'da derlenir**, sunucuda değil: `t3.small` 2 GB RAM'e sahip ve
+  Maven + npm build'ini çalışan stack ile birlikte yapmak OOM riski taşır.
 
 ### Yerel Docker build ve TLS kesintisi
 
