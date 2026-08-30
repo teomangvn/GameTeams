@@ -53,6 +53,13 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+      group:
+        # Deploy ve konteyner saglik kontrolu bunu kullanir. Mail bilerek
+        # disarida: SMTP gecici erisilemez oldugunda uygulama trafigi
+        # karsilamaya devam eder, deploy bosuna basarisiz sayilmamalidir.
+        # Mail durumu /actuator/health uzerinden hala gorulebilir.
+        readiness:
+          include: db, redis, ping
 
 gameteams:
   # Doğrulama/şifre sıfırlama maillerindeki linkler bu adrese işaret eder.

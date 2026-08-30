@@ -29,8 +29,10 @@ COPY --from=build --chown=app:app /build/extracted/application/ ./
 USER app
 EXPOSE 8080
 
+# readiness grubu: db + redis + ping. Mail disarida (bkz. application.yml):
+# SMTP gecici erisilemez oldugunda konteyner unhealthy sayilmamali.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD wget -qO- http://localhost:8080/actuator/health | grep -q '"status":"UP"' || exit 1
+    CMD wget -qO- http://localhost:8080/actuator/health/readiness | grep -q '"status":"UP"' || exit 1
 
 # Konteyner bellek sinirlarina uy; sabit -Xmx yerine yuzde kullanilir.
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+UseSerialGC"

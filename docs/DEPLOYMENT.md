@@ -152,6 +152,10 @@ yedek sunucuyla birlikte kaybolacağı için bu önerilir.
 ## 9. Deploy sonrası doğrulama
 
 - [ ] `https://<DOMAIN>` açılıyor, sertifika geçerli
+- [ ] `curl https://<DOMAIN>/actuator/health/readiness` → `"status":"UP"`
+      (deploy ve konteyner sağlık kontrolü bunu kullanır; mail dahil değildir)
+- [ ] `curl https://<DOMAIN>/actuator/health` → mail bileşeni `UP`
+      (DOWN ise SES ayarları hatalı; uygulama çalışır ama mail gitmez)
 - [ ] Kayıt ol → **gerçek** doğrulama maili geliyor (SES sandbox dışında)
 - [ ] Giriş sonrası sayfa yenilendiğinde oturum korunuyor (refresh cookie)
 - [ ] Tarayıcı konsolunda `wss://` bağlantısı kuruluyor, mesaj anlık gidiyor
@@ -171,7 +175,9 @@ yedek sunucuyla birlikte kaybolacağı için bu önerilir.
 yerde aynı mı kontrol edin.
 
 **Mailler gitmiyor** — SES sandbox'ta olabilir; `docker compose logs backend`
-içinde SMTP hatasına bakın.
+içinde SMTP hatasına bakın. `/actuator/health` içindeki `mail` bileşeni durumu
+da ipucu verir. Mail arızası deploy'u engellemez: sağlık kontrolü `readiness`
+grubunu kullanır ve mail o gruba dahil değildir.
 
 **Rate limit herkesi kilitliyor** — nginx `X-Forwarded-For` göndermiyorsa tüm
 istekler tek IP'den geliyor görünür. Proxy başlıklarını kontrol edin.

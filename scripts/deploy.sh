@@ -72,7 +72,7 @@ fi
 echo "==> Saglik kontrolu"
 # Flyway migration'lari backend acilisinda otomatik uygulanir.
 for attempt in $(seq 1 60); do
-  if curl -fsS http://localhost/actuator/health 2>/dev/null | grep -q '"status":"UP"'; then
+  if curl -fsS http://localhost/actuator/health/readiness 2>/dev/null | grep -q '"status":"UP"'; then
     echo "Deploy tamam."
     $COMPOSE ps
     # Eski imajlar diski doldurmasin.
