@@ -9,14 +9,30 @@ BACKUP_DIR="${BACKUP_DIR:-/var/backups/gameteams}"
 RETENTION_DAYS="${RETENTION_DAYS:-14}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 FILE="${BACKUP_DIR}/gameteams-${STAMP}.sql.gz"
+# Once gecici dosyaya yazilir: pg_dump basarisiz olsa bile gzip cikti uretir
+# ve yarim dosya gecerli bir yedek gibi gorunurdu. Asil kurtarma aninda fark
+# edilen boyle bir dosya, yedek olmamasindan daha kotudur.
+TMP="${FILE}.partial"
 
 # shellcheck disable=SC1091
 set -a; source .env; set +a
 
 mkdir -p "$BACKUP_DIR"
+# Hata durumunda yarim dosya birakmadan cik.
+trap 'rm -f "$TMP"' EXIT
 
 docker compose exec -T postgres \
-  pg_dump -U "${DB_USER}" -d "${DB_NAME}" --clean --if-exists | gzip > "$FILE"
+  pg_dump -U "${DB_USER}" -d "${DB_NAME}" --clean --if-exists | gzip > "$TMP"
+
+# gzip butunlugu ve makul bir alt sinir: bos bir dump da gecerli gzip'tir.
+gzip -t "$TMP"
+if [[ "$(stat -c %s "$TMP")" -lt 1024 ]]; then
+  echo "HATA: Yedek supheli derecede kucuk, atiliyor." >&2
+  exit 1
+fi
+
+mv "$TMP" "$FILE"
+trap - EXIT
 
 echo "Yedek alindi: ${FILE} ($(du -h "$FILE" | cut -f1))"
 

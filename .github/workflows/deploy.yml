@@ -1,0 +1,136 @@
+name: Test, Build & Deploy
+
+# main'e her push'ta: testler kosar, imajlar GHCR'a itilir, sunucu yeni
+# imajlari ceker. Testler kirmizi ise deploy calismaz.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  test:
+    name: Testler
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 21 kur
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      # Runner'da gercek Docker var; Testcontainers testi burada gercekten
+      # kosar (yerel Docker Desktop 29 uyumsuzlugu nedeniyle atlaniyordu).
+      - name: Backend testleri
+        working-directory: backend
+        run: ./mvnw -B verify
+
+      - name: Node 24 kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend bagimliliklari
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend testleri
+        working-directory: frontend
+        run: npm test
+
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build
+
+  build:
+    name: Imajlari derle ve it
+    needs: test
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # GHCR imaj adlari kucuk harf olmali; repo adi buyuk harf icerebiliyor.
+      - name: Imaj adlarini hazirla
+        id: meta
+        run: |
+          echo "repo=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+          echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: GHCR'a giris
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Backend imaji
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.repo }}-backend:latest
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.repo }}-backend:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Frontend imaji
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.repo }}-frontend:latest
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.repo }}-frontend:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  deploy:
+    name: Sunucuya deploy
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Ayni anda iki deploy calismasin; ikincisi birincinin bitmesini bekler.
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    steps:
+      - name: SSH anahtarini hazirla
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          # Host anahtari secret'tan gelir; ssh-keyscan her calismada yeniden
+          # guvenmek anlamina gelir ve MITM'e acik kalirdi.
+          printf '%s\n' "$HOST_KEY" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          IMAGE_TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cd /opt/gameteams && IMAGE_TAG='${IMAGE_TAG}' ./scripts/deploy.sh --pull"

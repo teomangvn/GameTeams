@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { voiceApi, type SignalMessage, type VoiceEvent, type VoiceParticipant } from "@/api/voice";
 import { PeerManager } from "@/lib/webrtc/peerManager";
+import {
+  describeMicrophoneError,
+  describeScreenShareError,
+  isSecureMediaContext,
+} from "@/features/voice/mediaErrors";
 import { publish, subscribe } from "@/lib/stompClient";
+import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 
 export interface VoiceSession {
@@ -15,7 +21,6 @@ export interface VoiceSession {
   participants: VoiceParticipant[];
   /** Uzak katilimcilarin ses/goruntu akislari. */
   remoteStreams: Record<string, MediaStream>;
-  error: string | null;
 }
 
 /**
@@ -72,16 +77,23 @@ export function useVoiceSession() {
         screenSharing: false,
         participants: [],
         remoteStreams: {},
-        error: null,
       });
 
       let micStream: MediaStream;
       try {
+        if (!isSecureMediaContext()) {
+          // navigator.mediaDevices tanimsiz; cagirmak TypeError firlatirdi.
+          throw new Error("insecure-context");
+        }
         micStream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true },
         });
-      } catch {
-        patch({ error: "Mikrofona erişilemedi. Tarayıcı izinlerini kontrol et." });
+      } catch (error) {
+        // Oturumu temizle: aksi halde kenar cubugu "Ses baglandi" gosterir ve
+        // ayni kanala tekrar tiklamak erken donerek yeniden denemeyi engeller.
+        channelIdRef.current = null;
+        setSession(null);
+        toast.error(describeMicrophoneError(error));
         return;
       }
 
@@ -192,8 +204,10 @@ export function useVoiceSession() {
         patch({ screenSharing: true });
         pushState(session.muted, session.deafened, true);
       }
-    } catch {
-      // Kullanici paylasim penceresini iptal etti; hata gostermeye gerek yok.
+    } catch (error) {
+      // Kullanici paylasim penceresini kapattiysa mesaj gosterilmez.
+      const message = describeScreenShareError(error);
+      if (message) toast.error(message);
     }
   }, [session, patch, pushState]);
 
