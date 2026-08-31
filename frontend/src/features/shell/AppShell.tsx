@@ -19,6 +19,7 @@ import {
 import { useFriendEvents } from "@/features/friends/useFriendEvents";
 import MatchFoundDialog from "@/features/matchmaking/MatchFoundDialog";
 import PromptDialog from "@/components/ui/prompt-dialog";
+import CreateChannelDialog from "@/features/channels/CreateChannelDialog";
 import { ApiError } from "@/api/client";
 import { toast } from "@/stores/toastStore";
 import { useMatchmaking } from "@/features/matchmaking/useMatchmaking";
@@ -45,6 +46,10 @@ export function AppShell() {
    * "bagli olmak" ile "izgarayi goruyor olmak" ayri durumlar.
    */
   const [voiceViewOpen, setVoiceViewOpen] = useState(false);
+  /** Ses izgarasinin yanindaki kanal sohbeti acik mi. */
+  const [voiceChatOpen, setVoiceChatOpen] = useState(false);
+  /** Baglanilan ses kanalinin kendisi; sohbeti bu kanala yazilir. */
+  const [voiceChannel, setVoiceChannel] = useState<Channel | null>(null);
 
   const voice = useVoiceSession();
   const queryClient = useQueryClient();
@@ -90,6 +95,7 @@ export function AppShell() {
     (channel: Channel) => {
       if (!activeRoom) return;
       void voice.connect(channel.id, channel.name, activeRoom.name);
+      setVoiceChannel(channel);
       setVoiceViewOpen(true);
     },
     [activeRoom, voice],
@@ -119,14 +125,18 @@ export function AppShell() {
   );
 
   const handleCreateChannel = useCallback(
-    (name: string) => {
+    (name: string, type: Channel["type"]) => {
       createChannel.mutate(
-        { name, type: "TEXT" },
+        { name, type },
         {
           onSuccess: (channel) => {
-            toast.success(`#${channel.name} oluşturuldu.`);
+            toast.success(`${channel.type === "VOICE" ? "🔊" : "#"}${channel.name} oluşturuldu.`);
             setPrompt(null);
-            setActiveChannelId(channel.id);
+            // Ses kanali olusturmak otomatik baglanmasin; kullanici kendi girsin.
+            if (channel.type === "TEXT") {
+              setActiveChannelId(channel.id);
+              setVoiceViewOpen(false);
+            }
           },
           onError: (error) =>
             toast.error(error instanceof ApiError ? error.message : "Kanal oluşturulamadı."),
@@ -177,11 +187,29 @@ export function AppShell() {
           onDisconnectVoice={() => {
             voice.disconnect();
             setVoiceViewOpen(false);
+            setVoiceChannel(null);
           }}
         />
 
         {voiceViewOpen && voice.session ? (
-          <VoiceGrid session={voice.session} />
+          <>
+            <VoiceGrid
+              session={voice.session}
+              chatOpen={voiceChatOpen}
+              onToggleChat={() => setVoiceChatOpen((value) => !value)}
+            />
+            {voiceChatOpen && voiceChannel && (
+              <div className="w-96 shrink-0 border-l border-neutral-800 flex">
+                <ChatArea
+                  channel={voiceChannel}
+                  conversation={null}
+                  roomName={voice.session.roomName}
+                  membersVisible={false}
+                  onToggleMembers={() => undefined}
+                />
+              </div>
+            )}
+          </>
         ) : (
         <ChatArea
           channel={activeChannel}
@@ -205,13 +233,8 @@ export function AppShell() {
       {/* Uzak ses/ekran akislari; gorunur bir yeri yok ama olmadan ses duyulmaz. */}
       <VoiceStage session={voice.session} />
 
-      <PromptDialog
+      <CreateChannelDialog
         open={prompt === "channel"}
-        title="Kanal oluştur"
-        description="Odaya yeni bir metin kanalı ekle."
-        label="Kanal adı"
-        placeholder="strateji"
-        submitLabel="Oluştur"
         loading={createChannel.isPending}
         onSubmit={handleCreateChannel}
         onClose={() => setPrompt(null)}

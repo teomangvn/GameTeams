@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import type { VoiceSession } from "@/features/voice/useVoiceSession";
+import { useMediaSettingsStore } from "@/stores/mediaSettingsStore";
 
 /**
  * Uzak akislari calan gorunmez katman.
@@ -10,6 +11,8 @@ import type { VoiceSession } from "@/features/voice/useVoiceSession";
  * burada yalnizca ses calinir.
  */
 export function VoiceStage({ session }: { session: VoiceSession | null }) {
+  const speakerId = useMediaSettingsStore((s) => s.speakerId);
+
   if (!session) return null;
 
   const entries = Object.entries(session.remoteStreams);
@@ -17,14 +20,32 @@ export function VoiceStage({ session }: { session: VoiceSession | null }) {
   return (
     <>
       {entries.map(([userId, stream]) => (
-        <RemoteAudio key={userId} stream={stream} deafened={session.deafened} />
+        <RemoteAudio
+          key={userId}
+          stream={stream}
+          deafened={session.deafened}
+          speakerId={speakerId}
+        />
       ))}
 
     </>
   );
 }
 
-function RemoteAudio({ stream, deafened }: { stream: MediaStream; deafened: boolean }) {
+/** setSinkId henuz her tarayicida yok ve TS tipi de tanimli degil. */
+type AudioElementWithSink = HTMLAudioElement & {
+  setSinkId?: (deviceId: string) => Promise<void>;
+};
+
+function RemoteAudio({
+  stream,
+  deafened,
+  speakerId,
+}: {
+  stream: MediaStream;
+  deafened: boolean;
+  speakerId: string;
+}) {
   const ref = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -40,6 +61,14 @@ function RemoteAudio({ stream, deafened }: { stream: MediaStream; deafened: bool
   useEffect(() => {
     if (ref.current) ref.current.muted = deafened;
   }, [deafened]);
+
+  // Cikis aygitini yonlendir. Firefox ve Safari setSinkId'i desteklemiyor;
+  // desteklenmiyorsa sistem varsayilani kullanilir, ses yine de calar.
+  useEffect(() => {
+    const element = ref.current as AudioElementWithSink | null;
+    if (!element?.setSinkId || !speakerId) return;
+    void element.setSinkId(speakerId).catch(() => undefined);
+  }, [speakerId]);
 
   return <audio ref={ref} autoPlay playsInline className="hidden" />;
 }

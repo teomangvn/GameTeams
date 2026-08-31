@@ -71,16 +71,29 @@ class MessageServiceTest {
         return message;
     }
 
+    /**
+     * Her ses kanalinin kendi sohbeti var: ayri bir eslesik metin kanali
+     * uretmek yerine kanalin kendisi mesaj tasiyor. Erisim kontrolu kanal
+     * turune degil oda uyeligine dayandigi icin yetkilendirme degismiyor.
+     */
     @Test
-    void sendRejectsVoiceChannels() {
+    void sendAcceptsVoiceChannels() {
         Room room = textChannel.getRoom();
         Channel voice = new Channel(room, "Ses", ChannelType.VOICE, null, 1, 6);
-        when(channelService.requireAccessibleChannel(channelId, userId)).thenReturn(voice);
+        ReflectionTestUtils.setField(voice, "id", channelId);
 
-        assertThatThrownBy(() -> messageService.send(channelId, userId, "merhaba", null))
-                .isInstanceOf(ApiException.class)
-                .extracting(ex -> ((ApiException) ex).code())
-                .isEqualTo("NOT_A_TEXT_CHANNEL");
+        when(channelService.requireAccessibleChannel(channelId, userId)).thenReturn(voice);
+        when(users.findById(userId)).thenReturn(Optional.of(author));
+        when(messages.save(any(Message.class))).thenAnswer(invocation -> {
+            Message saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", UUID.randomUUID());
+            ReflectionTestUtils.setField(saved, "createdAt", Instant.now());
+            return saved;
+        });
+
+        var sent = messageService.send(channelId, userId, "merhaba", null);
+
+        assertThat(sent.content()).isEqualTo("merhaba");
     }
 
     @Test

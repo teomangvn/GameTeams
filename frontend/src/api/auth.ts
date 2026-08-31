@@ -25,6 +25,14 @@ interface MessageResponse {
   message: string;
 }
 
+export interface LoginResponse {
+  status: "AUTHENTICATED" | "DEVICE_VERIFICATION_REQUIRED";
+  auth: AuthResponse | null;
+  challengeId: string | null;
+  /** Kullanicinin hangi kutuya bakacagini anlamasi icin kismen gizli adres. */
+  maskedEmail: string | null;
+}
+
 export const authApi = {
   register: (body: {
     username: string;
@@ -42,8 +50,27 @@ export const authApi = {
       body: { email },
     }),
 
+  /**
+   * Giris ya oturumu acar ya da cihaz dogrulamasi ister. Taninmayan bir
+   * cihazda token uretilmez; e-postaya giden kod dogrulanana kadar oturum yok.
+   */
   login: async (body: { email: string; password: string }) => {
-    const data = await request<AuthResponse>("/api/auth/login", { method: "POST", body });
+    const data = await request<LoginResponse>("/api/auth/login", { method: "POST", body });
+    if (data.status === "AUTHENTICATED" && data.auth) {
+      setAccessToken(data.auth.accessToken);
+    }
+    return data;
+  },
+
+  verifyDevice: async (body: {
+    challengeId: string;
+    code: string;
+    rememberDevice: boolean;
+  }) => {
+    const data = await request<AuthResponse>("/api/auth/verify-device", {
+      method: "POST",
+      body,
+    });
     setAccessToken(data.accessToken);
     return data;
   },

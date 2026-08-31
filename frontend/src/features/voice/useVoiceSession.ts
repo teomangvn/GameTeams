@@ -11,6 +11,11 @@ import {
 import { publish, subscribe } from "@/lib/stompClient";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
+import {
+  audioConstraints,
+  useMediaSettingsStore,
+  videoConstraints,
+} from "@/stores/mediaSettingsStore";
 
 export interface VoiceSession {
   channelId: string;
@@ -25,6 +30,8 @@ export interface VoiceSession {
   remoteStreams: Record<string, MediaStream>;
   /** Kendi kamera/ekran onizlemesi; izgarada kendi karesinde gosterilir. */
   localVideo: MediaStream | null;
+  /** Kendi mikrofon akisi; konusma gostergesi bunun seviyesini olcer. */
+  localAudio: MediaStream | null;
 }
 
 /**
@@ -40,6 +47,13 @@ export function useVoiceSession() {
   const peersRef = useRef<PeerManager | null>(null);
   const channelIdRef = useRef<string | null>(null);
   const unsubscribeRef = useRef<Array<() => void>>([]);
+  /** Mikrofonun hangi ayarlarla kuruldugu; gereksiz yeniden kurmayi onler. */
+  const appliedAudioRef = useRef<string | null>(null);
+
+  const microphoneId = useMediaSettingsStore((s) => s.microphoneId);
+  const noiseSuppression = useMediaSettingsStore((s) => s.noiseSuppression);
+  const echoCancellation = useMediaSettingsStore((s) => s.echoCancellation);
+  const autoGainControl = useMediaSettingsStore((s) => s.autoGainControl);
 
   const patch = useCallback((update: Partial<VoiceSession>) => {
     setSession((current) => (current ? { ...current, ...update } : current));
@@ -51,6 +65,7 @@ export function useVoiceSession() {
     peersRef.current?.closeAll();
     peersRef.current = null;
     channelIdRef.current = null;
+    appliedAudioRef.current = null;
   }, []);
 
   const disconnect = useCallback(() => {
@@ -62,6 +77,42 @@ export function useVoiceSession() {
 
   // Sekme kapanirken kanaldan duzgun cikilsin.
   useEffect(() => () => teardown(), [teardown]);
+
+  /**
+   * Aygit veya isleme ayari degisince canli baglantidaki mikrofonu degistir.
+   * replaceTrack yeniden pazarlik gerektirmedigi icin konusma kesilmez.
+   */
+  useEffect(() => {
+    const peers = peersRef.current;
+    if (!peers || !channelIdRef.current) return;
+
+    const settings = useMediaSettingsStore.getState();
+    const signature = audioSignature(settings);
+    if (appliedAudioRef.current === signature) return;
+    appliedAudioRef.current = signature;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: audioConstraints(settings),
+        });
+        const [track] = stream.getAudioTracks();
+        if (cancelled) {
+          track.stop();
+          return;
+        }
+        await peers.replaceAudioTrack(track);
+        patch({ localAudio: stream });
+      } catch (error) {
+        toast.error(describeMicrophoneError(error));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [microphoneId, noiseSuppression, echoCancellation, autoGainControl, patch]);
 
   const connect = useCallback(
     async (channelId: string, channelName: string, roomName: string) => {
@@ -83,6 +134,7 @@ export function useVoiceSession() {
         participants: [],
         remoteStreams: {},
         localVideo: null,
+        localAudio: null,
       });
 
       let micStream: MediaStream;
@@ -91,9 +143,12 @@ export function useVoiceSession() {
           // navigator.mediaDevices tanimsiz; cagirmak TypeError firlatirdi.
           throw new Error("insecure-context");
         }
+        const settings = useMediaSettingsStore.getState();
         micStream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true },
+          audio: audioConstraints(settings),
         });
+        // Asagidaki efekt ayni ayarlar icin mikrofonu bir daha kurmasin.
+        appliedAudioRef.current = audioSignature(settings);
       } catch (error) {
         // Oturumu temizle: aksi halde kenar cubugu "Ses baglandi" gosterir ve
         // ayni kanala tekrar tiklamak erken donerek yeniden denemeyi engeller.
@@ -121,6 +176,7 @@ export function useVoiceSession() {
       });
       peers.setLocalStream(micStream);
       peersRef.current = peers;
+      patch({ localAudio: micStream });
 
       // Kanal olaylari
       unsubscribeRef.current.push(
@@ -235,7 +291,9 @@ export function useVoiceSession() {
         pushState(session.muted, session.deafened, session.screenSharing, false);
       } else {
         if (!isSecureMediaContext()) throw new Error("insecure-context");
-        const stream = await peers.startCamera();
+        const stream = await peers.startCamera(
+          videoConstraints(useMediaSettingsStore.getState()),
+        );
         patch({ cameraOn: true, screenSharing: false, localVideo: stream });
         pushState(session.muted, session.deafened, false, true);
       }
@@ -253,4 +311,19 @@ export function useVoiceSession() {
     toggleScreenShare: () => void toggleScreenShare(),
     toggleCamera: () => void toggleCamera(),
   };
+}
+
+/** Mikrofonun yeniden kurulmasini gerektiren ayarlarin imzasi. */
+function audioSignature(settings: {
+  microphoneId: string;
+  noiseSuppression: boolean;
+  echoCancellation: boolean;
+  autoGainControl: boolean;
+}): string {
+  return [
+    settings.microphoneId,
+    settings.noiseSuppression,
+    settings.echoCancellation,
+    settings.autoGainControl,
+  ].join("|");
 }

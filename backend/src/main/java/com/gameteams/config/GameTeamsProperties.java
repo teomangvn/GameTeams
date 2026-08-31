@@ -17,7 +17,8 @@ public record GameTeamsProperties(
         Admin admin,
         Webrtc webrtc,
         Cookie cookie,
-        Uploads uploads) {
+        Uploads uploads,
+        Security security) {
 
     public record Cors(List<String> allowedOrigins) {
     }
@@ -28,6 +29,19 @@ public record GameTeamsProperties(
      * spring.servlet.multipart tarafinda sinirlanir.
      */
     public record Uploads(String avatarDir, long maxAvatarBytes) {
+    }
+
+    /**
+     * Taninmayan cihazdan giriste e-posta ile kod dogrulamasi.
+     *
+     * deviceVerification kapatma anahtaridir: e-posta teslimati bozuldugunda
+     * (or. SES sandbox'inda dogrulanmamis adres) bu ozellik kullaniciyi kendi
+     * hesabindan kilitler. Kurtarma yolu DEVICE_VERIFICATION=false.
+     */
+    public record Security(
+            boolean deviceVerification,
+            Duration challengeTtl,
+            Duration trustTtl) {
     }
 
     public record Jwt(String secret, Duration accessTokenTtl, Duration refreshTokenTtl) {

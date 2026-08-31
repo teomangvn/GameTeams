@@ -8,5 +8,8 @@ public interface EmailSender {
 
     void sendVerificationEmail(String to, String displayName, String verifyUrl);
 
+    /** Taninmayan cihazdan giris denemesi icin tek kullanimlik kod. */
+    void sendLoginCodeEmail(String to, String displayName, String code, String device);
+
     void sendPasswordResetEmail(String to, String displayName, String resetUrl);
 }

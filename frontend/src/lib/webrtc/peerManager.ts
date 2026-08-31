@@ -166,11 +166,35 @@ export class PeerManager {
   }
 
   /** Kamerayi acar. Ekran paylasimi aciksa once o kapatilir. */
-  async startCamera(): Promise<MediaStream> {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-    });
+  async startCamera(video: MediaTrackConstraints): Promise<MediaStream> {
+    const stream = await navigator.mediaDevices.getUserMedia({ video });
     return this.publishVideo(stream);
+  }
+
+  /**
+   * Mikrofon track'ini degistirir: aygit secimi veya gurultu engelleme ayari
+   * degistiginde cagrilir.
+   *
+   * replaceTrack ayni turde bir track icin SDP yeniden pazarligi gerektirmez,
+   * yani konusma kesintiye ugramaz. Track'in enabled durumu korunur; aksi
+   * halde susturulmus bir mikrofon aygit degisiminde kendiliginden acilirdi.
+   */
+  async replaceAudioTrack(track: MediaStreamTrack) {
+    const previous = this.localStream?.getAudioTracks()[0] ?? null;
+    if (previous) track.enabled = previous.enabled;
+
+    for (const [, peer] of this.peers) {
+      const sender = peer.getSenders().find((s) => s.track?.kind === "audio");
+      if (sender) await sender.replaceTrack(track);
+    }
+
+    if (this.localStream) {
+      if (previous) {
+        this.localStream.removeTrack(previous);
+        previous.stop();
+      }
+      this.localStream.addTrack(track);
+    }
   }
 
   /** Giden videoyu (kamera veya ekran) durdurur. */

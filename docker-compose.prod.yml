@@ -50,6 +50,10 @@ services:
       MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-true}
       MAIL_SMTP_STARTTLS: ${MAIL_SMTP_STARTTLS:-true}
       AVATAR_DIR: /app/uploads/avatars
+      # Taninmayan cihazdan giriste e-postaya kod gonderir.
+      # KURTARMA: mail gitmiyorsa .env'de false yapip backend'i yeniden baslat,
+      # aksi halde kimse giris yapamaz.
+      DEVICE_VERIFICATION: ${DEVICE_VERIFICATION:-true}
       STUN_URLS: ${STUN_URLS}
       TURN_URLS: ${TURN_URLS}
       TURN_SECRET: ${TURN_SECRET}

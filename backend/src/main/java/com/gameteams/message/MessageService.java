@@ -13,7 +13,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.gameteams.channel.Channel;
 import com.gameteams.channel.ChannelService;
-import com.gameteams.channel.ChannelType;
 import com.gameteams.common.ApiException;
 import com.gameteams.dm.DmConversation;
 import com.gameteams.dm.DmService;
@@ -57,14 +56,15 @@ public class MessageService {
         return toPage(found);
     }
 
+    /**
+     * Ses kanallari da mesaj tasir: her ses kanalinin kendi sohbeti vardir.
+     * Ayri bir "eslesik metin kanali" uretmek yerine kanalin kendisi kullanilir,
+     * boylece uyelik ve yetkilendirme tek bir kayit uzerinden yurur.
+     */
     @Transactional
     public MessageResponse send(UUID channelId, UUID userId, String content, UUID replyToId) {
+        // Erisim kontrolu kanal turune degil oda uyeligine dayanir.
         Channel channel = channelService.requireAccessibleChannel(channelId, userId);
-
-        if (channel.getType() != ChannelType.TEXT) {
-            throw ApiException.badRequest("NOT_A_TEXT_CHANNEL",
-                    "Ses kanalina mesaj gonderilemez.");
-        }
 
         String trimmed = content.strip();
         if (trimmed.isEmpty()) {

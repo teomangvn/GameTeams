@@ -7,6 +7,7 @@ import com.gameteams.user.User;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -87,6 +88,37 @@ public final class AuthDtos {
 
     /** Refresh token gövdede dönmez; HttpOnly cookie ile taşınır. */
     public record AuthResponse(String accessToken, long expiresInSeconds, UserResponse user) {
+    }
+
+    /**
+     * Girişin sonucu. status = AUTHENTICATED ise auth doludur; status =
+     * DEVICE_VERIFICATION_REQUIRED ise oturum açılmamıştır ve challengeId ile
+     * kod doğrulanması beklenir.
+     */
+    public record LoginResponse(
+            String status,
+            AuthResponse auth,
+            UUID challengeId,
+            String maskedEmail) {
+
+        public static LoginResponse authenticated(AuthResponse auth) {
+            return new LoginResponse("AUTHENTICATED", auth, null, null);
+        }
+
+        public static LoginResponse challenge(UUID challengeId, String maskedEmail) {
+            return new LoginResponse("DEVICE_VERIFICATION_REQUIRED", null, challengeId, maskedEmail);
+        }
+    }
+
+    public record VerifyDeviceRequest(
+            @NotNull(message = "Doğrulama isteği zorunlu.")
+            UUID challengeId,
+
+            @NotBlank(message = "Kod zorunlu.")
+            @Pattern(regexp = "^[0-9]{6}$", message = "Kod 6 haneli olmalı.")
+            String code,
+
+            boolean rememberDevice) {
     }
 
     public record MessageResponse(String message) {
