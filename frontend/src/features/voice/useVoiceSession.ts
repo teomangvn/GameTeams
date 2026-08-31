@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { voiceApi, type SignalMessage, type VoiceEvent, type VoiceParticipant } from "@/api/voice";
 import { PeerManager } from "@/lib/webrtc/peerManager";
 import {
+  describeCameraError,
   describeMicrophoneError,
   describeScreenShareError,
   isSecureMediaContext,
@@ -18,9 +19,12 @@ export interface VoiceSession {
   muted: boolean;
   deafened: boolean;
   screenSharing: boolean;
+  cameraOn: boolean;
   participants: VoiceParticipant[];
   /** Uzak katilimcilarin ses/goruntu akislari. */
   remoteStreams: Record<string, MediaStream>;
+  /** Kendi kamera/ekran onizlemesi; izgarada kendi karesinde gosterilir. */
+  localVideo: MediaStream | null;
 }
 
 /**
@@ -75,8 +79,10 @@ export function useVoiceSession() {
         muted: false,
         deafened: false,
         screenSharing: false,
+        cameraOn: false,
         participants: [],
         remoteStreams: {},
+        localVideo: null,
       });
 
       let micStream: MediaStream;
@@ -125,6 +131,7 @@ export function useVoiceSession() {
                 muted: event.participant.muted,
                 deafened: event.participant.deafened,
                 screenSharing: event.participant.screenSharing,
+                cameraOn: event.participant.cameraOn,
               });
             }
             return;
@@ -163,17 +170,22 @@ export function useVoiceSession() {
     [selfUserId, disconnect, patch],
   );
 
-  const pushState = useCallback((muted: boolean, deafened: boolean, screenSharing: boolean) => {
-    const channelId = channelIdRef.current;
-    if (channelId) publish(`/app/voice.${channelId}.state`, { muted, deafened, screenSharing });
-  }, []);
+  const pushState = useCallback(
+    (muted: boolean, deafened: boolean, screenSharing: boolean, cameraOn: boolean) => {
+      const channelId = channelIdRef.current;
+      if (channelId) {
+        publish(`/app/voice.${channelId}.state`, { muted, deafened, screenSharing, cameraOn });
+      }
+    },
+    [],
+  );
 
   const toggleMute = useCallback(() => {
     setSession((s) => {
       if (!s) return s;
       const muted = !s.muted;
       peersRef.current?.setMicrophoneEnabled(!muted);
-      pushState(muted, s.deafened, s.screenSharing);
+      pushState(muted, s.deafened, s.screenSharing, s.cameraOn);
       return { ...s, muted };
     });
   }, [pushState]);
@@ -185,7 +197,7 @@ export function useVoiceSession() {
       // Sesi kapatmak mikrofonu da kapatir; acmak mikrofonu geri acmaz.
       const muted = deafened ? true : s.muted;
       peersRef.current?.setMicrophoneEnabled(!muted);
-      pushState(muted, deafened, s.screenSharing);
+      pushState(muted, deafened, s.screenSharing, s.cameraOn);
       return { ...s, deafened, muted };
     });
   }, [pushState]);
@@ -196,18 +208,39 @@ export function useVoiceSession() {
 
     try {
       if (session.screenSharing) {
-        await peers.stopScreenShare();
-        patch({ screenSharing: false });
-        pushState(session.muted, session.deafened, false);
+        await peers.stopVideo();
+        patch({ screenSharing: false, localVideo: null });
+        pushState(session.muted, session.deafened, false, session.cameraOn);
       } else {
-        await peers.startScreenShare();
-        patch({ screenSharing: true });
-        pushState(session.muted, session.deafened, true);
+        const stream = await peers.startScreenShare();
+        // Kamera ile ekran ayni anda yayinlanmaz; PeerManager eskisini kapatir.
+        patch({ screenSharing: true, cameraOn: false, localVideo: stream });
+        pushState(session.muted, session.deafened, true, false);
       }
     } catch (error) {
       // Kullanici paylasim penceresini kapattiysa mesaj gosterilmez.
       const message = describeScreenShareError(error);
       if (message) toast.error(message);
+    }
+  }, [session, patch, pushState]);
+
+  const toggleCamera = useCallback(async () => {
+    const peers = peersRef.current;
+    if (!peers || !session) return;
+
+    try {
+      if (session.cameraOn) {
+        await peers.stopVideo();
+        patch({ cameraOn: false, localVideo: null });
+        pushState(session.muted, session.deafened, session.screenSharing, false);
+      } else {
+        if (!isSecureMediaContext()) throw new Error("insecure-context");
+        const stream = await peers.startCamera();
+        patch({ cameraOn: true, screenSharing: false, localVideo: stream });
+        pushState(session.muted, session.deafened, false, true);
+      }
+    } catch (error) {
+      toast.error(describeCameraError(error));
     }
   }, [session, patch, pushState]);
 
@@ -218,5 +251,6 @@ export function useVoiceSession() {
     toggleMute,
     toggleDeafen,
     toggleScreenShare: () => void toggleScreenShare(),
+    toggleCamera: () => void toggleCamera(),
   };
 }

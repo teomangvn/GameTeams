@@ -74,15 +74,19 @@ interface RequestOptions {
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, retryOnUnauthorized = true } = options;
 
+  // Dosya yuklemede Content-Type'i elle kurmuyoruz: tarayici multipart
+  // sinirini (boundary) kendisi uretmeli, sabit bir deger govdeyi bozar.
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+
   const headers: Record<string, string> = {};
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (body !== undefined && !isFormData) headers["Content-Type"] = "application/json";
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
   const response = await fetch(`${API_BASE}${path}`, {
     method,
     headers,
     credentials: "include",
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
   });
 
   // Access token süresi dolmuşsa bir kez yenileyip isteği tekrarla.

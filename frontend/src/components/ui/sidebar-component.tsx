@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Search as SearchIcon,
   ChevronDown as ChevronDownIcon,
   User as UserIcon,
   OverflowMenuHorizontal,
+  Logout as LogoutIcon,
 } from "@carbon/icons-react";
 
 import { cn } from "@/lib/utils";
@@ -52,7 +53,7 @@ export interface SidebarUser {
   name: string;
   avatarUrl?: string;
   status?: PresenceStatus;
-  onMenuClick?: () => void;
+  onLogout?: () => void;
 }
 
 export interface TwoLevelSidebarProps {
@@ -70,7 +71,6 @@ export interface TwoLevelSidebarProps {
   onSearchChange?: (value: string) => void;
   /** Kullanıcı satırının üstünde gösterilir (ör. ses kontrol çubuğu). */
   footer?: React.ReactNode;
-  defaultCollapsed?: boolean;
   className?: string;
 }
 
@@ -131,12 +131,10 @@ function AvatarCircle({
 /* ------------------------------ Search Input ----------------------------- */
 
 function SearchContainer({
-  isCollapsed = false,
   placeholder = "Ara...",
   value,
   onChange,
 }: {
-  isCollapsed?: boolean;
   placeholder?: string;
   value?: string;
   onChange?: (value: string) => void;
@@ -151,39 +149,15 @@ function SearchContainer({
   };
 
   return (
-    <div
-      className={cn(
-        "relative shrink-0 transition-all duration-500 w-full",
-        isCollapsed && "flex justify-center",
-      )}
-      style={springStyle}
-    >
-      <div
-        className={cn(
-          "bg-black h-10 relative rounded-lg flex items-center transition-all duration-500",
-          isCollapsed ? "w-10 min-w-10 justify-center" : "w-full",
-        )}
-        style={springStyle}
-      >
-        <div
-          className={cn(
-            "flex items-center justify-center shrink-0 transition-all duration-500",
-            isCollapsed ? "p-1" : "px-1",
-          )}
-          style={springStyle}
-        >
+    <div className="relative shrink-0 w-full">
+      <div className="bg-black h-10 relative rounded-lg flex items-center w-full">
+        <div className="flex items-center justify-center shrink-0 px-1">
           <div className="size-8 flex items-center justify-center">
             <SearchIcon size={16} className="text-neutral-50" />
           </div>
         </div>
 
-        <div
-          className={cn(
-            "flex-1 relative transition-opacity duration-500 overflow-hidden",
-            isCollapsed ? "opacity-0 w-0" : "opacity-100",
-          )}
-          style={springStyle}
-        >
+        <div className="flex-1 relative overflow-hidden">
           <div className="flex flex-col justify-center size-full">
             <div className="flex flex-col gap-2 items-start justify-center pr-2 py-1 w-full">
               <input
@@ -192,7 +166,6 @@ function SearchContainer({
                 value={currentValue}
                 onChange={(e) => handleChange(e.target.value)}
                 className="w-full bg-transparent border-none outline-none font-lexend text-[14px] text-neutral-50 placeholder:text-neutral-400 leading-[20px]"
-                tabIndex={isCollapsed ? -1 : 0}
               />
             </div>
           </div>
@@ -321,12 +294,10 @@ function MenuItem({
   item,
   isExpanded,
   onToggle,
-  isCollapsed,
 }: {
   item: SidebarMenuItem;
   isExpanded?: boolean;
   onToggle?: () => void;
-  isCollapsed?: boolean;
 }) {
   const hasChildren = Boolean(item.children?.length);
 
@@ -336,55 +307,32 @@ function MenuItem({
   };
 
   return (
-    <div
-      className={cn(
-        "relative shrink-0 transition-all duration-500 w-full",
-        isCollapsed && "flex justify-center",
-      )}
-      style={springStyle}
-    >
+    <div className="relative shrink-0 w-full">
       <button
         type="button"
         onClick={handleClick}
-        title={isCollapsed ? item.label : undefined}
         aria-expanded={hasChildren ? isExpanded : undefined}
-        style={springStyle}
         className={cn(
-          "rounded-lg cursor-pointer transition-all duration-500 flex items-center relative text-left",
+          "rounded-lg cursor-pointer transition-colors flex items-center relative text-left w-full h-10 px-4 py-2",
           item.isActive ? "bg-neutral-800" : "hover:bg-neutral-800",
-          isCollapsed
-            ? "w-10 min-w-10 h-10 justify-center p-4"
-            : "w-full h-10 px-4 py-2",
         )}
       >
         <div className="flex items-center justify-center shrink-0">{item.icon}</div>
 
-        <div
-          className={cn(
-            "flex-1 relative transition-opacity duration-500 overflow-hidden",
-            isCollapsed ? "opacity-0 w-0" : "opacity-100 ml-3",
-          )}
-          style={springStyle}
-        >
+        <div className="flex-1 relative overflow-hidden ml-3">
           <div className="font-lexend text-[14px] text-neutral-50 leading-[20px] truncate">
             {item.label}
           </div>
         </div>
 
-        {item.badge !== undefined && !isCollapsed && (
+        {item.badge !== undefined && (
           <span className="ml-2 shrink-0 min-w-5 h-5 px-1.5 rounded-full bg-neutral-700 text-[11px] font-lexend text-neutral-200 flex items-center justify-center">
             {item.badge}
           </span>
         )}
 
         {hasChildren && (
-          <div
-            className={cn(
-              "flex items-center justify-center shrink-0 transition-opacity duration-500",
-              isCollapsed ? "opacity-0 w-0" : "opacity-100 ml-2",
-            )}
-            style={springStyle}
-          >
+          <div className="flex items-center justify-center shrink-0 ml-2">
             <ChevronDownIcon
               size={16}
               className="text-neutral-50 transition-transform duration-500"
@@ -429,22 +377,14 @@ function MenuSection({
   section,
   expandedItems,
   onToggleExpanded,
-  isCollapsed,
 }: {
   section: SidebarSection;
   expandedItems: Set<string>;
   onToggleExpanded: (itemKey: string) => void;
-  isCollapsed?: boolean;
 }) {
   return (
     <div className="flex flex-col w-full">
-      <div
-        className={cn(
-          "relative shrink-0 w-full transition-all duration-500 overflow-hidden",
-          isCollapsed ? "h-0 opacity-0" : "h-10 opacity-100",
-        )}
-        style={springStyle}
-      >
+      <div className="relative shrink-0 w-full h-10">
         <div className="flex items-center h-10 px-4">
           <div className="font-lexend text-[14px] text-neutral-400">{section.title}</div>
         </div>
@@ -459,9 +399,8 @@ function MenuSection({
               item={item}
               isExpanded={isExpanded}
               onToggle={() => onToggleExpanded(itemKey)}
-              isCollapsed={isCollapsed}
             />
-            {isExpanded && item.children && !isCollapsed && (
+            {isExpanded && item.children && (
               <div className="flex flex-col gap-1 mb-2">
                 {item.children.map((child, childIndex) => (
                   <SubMenuItem key={child.id ?? `${itemKey}-${childIndex}`} item={child} />
@@ -477,52 +416,93 @@ function MenuSection({
 
 /* ------------------------------ Detail Panel ----------------------------- */
 
-function PanelTitle({
-  title,
-  onToggleCollapse,
-  isCollapsed,
-}: {
-  title: string;
-  onToggleCollapse: () => void;
-  isCollapsed: boolean;
-}) {
-  if (isCollapsed) {
-    return (
-      <div className="w-full flex justify-center transition-all duration-500" style={springStyle}>
-        <button
-          type="button"
-          onClick={onToggleCollapse}
-          aria-label="Paneli genişlet"
-          style={springStyle}
-          className="flex items-center justify-center rounded-lg size-10 min-w-10 transition-all duration-500 hover:bg-neutral-800 text-neutral-400 hover:text-neutral-300"
-        >
-          <ChevronDownIcon size={16} className="-rotate-90 scale-x-[-1]" />
-        </button>
-      </div>
-    );
-  }
-
+function PanelTitle({ title }: { title: string }) {
   return (
-    <div className="w-full overflow-hidden transition-all duration-500" style={springStyle}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center h-10 min-w-0">
-          <div className="px-2 py-1 min-w-0">
-            <div className="font-lexend font-semibold text-[18px] text-neutral-50 leading-[27px] truncate">
-              {title}
-            </div>
+    <div className="w-full overflow-hidden">
+      <div className="flex items-center h-10 min-w-0">
+        <div className="px-2 py-1 min-w-0">
+          <div className="font-lexend font-semibold text-[18px] text-neutral-50 leading-[27px] truncate">
+            {title}
           </div>
         </div>
-        <div className="pr-1 shrink-0">
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------- User Bar -------------------------------- */
+
+/**
+ * Kullanici satiri ve acilir menusu. Uc nokta butonu dogrudan cikis yapmak
+ * yerine menuyu acar: cikis geri alinamayan bir islem, tek yanlis tiklamayla
+ * tetiklenmemeli.
+ */
+function UserBar({ user }: { user: SidebarUser }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative w-full mt-auto pt-2 border-t border-neutral-800 shrink-0"
+    >
+      {open && (
+        <div
+          role="menu"
+          aria-label="Hesap islemleri"
+          className="absolute bottom-full left-1 right-1 z-20 mb-1 rounded-lg border border-neutral-800 bg-neutral-900 p-1 shadow-lg shadow-black/60"
+        >
           <button
             type="button"
-            onClick={onToggleCollapse}
-            aria-label="Paneli daralt"
-            style={springStyle}
-            className="flex items-center justify-center rounded-lg size-10 min-w-10 transition-all duration-500 hover:bg-neutral-800 text-neutral-400 hover:text-neutral-300"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              user.onLogout?.();
+            }}
+            className="w-full h-9 flex items-center gap-2 rounded-md px-3 text-left font-lexend text-[14px] text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300"
           >
-            <ChevronDownIcon size={16} className="rotate-90" />
+            <LogoutIcon size={16} className="shrink-0" />
+            Çıkış yap
           </button>
         </div>
+      )}
+
+      <div className="flex items-center gap-2 px-2 py-2">
+        <AvatarCircle avatarUrl={user.avatarUrl} name={user.name} status={user.status} />
+        <div className="font-lexend text-[14px] text-neutral-50 truncate">{user.name}</div>
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-label="Kullanıcı menüsü"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          className={cn(
+            "ml-auto size-8 rounded-md flex items-center justify-center shrink-0 transition-colors",
+            open
+              ? "bg-neutral-800 text-neutral-200"
+              : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200",
+          )}
+        >
+          <OverflowMenuHorizontal size={16} />
+        </button>
       </div>
     </div>
   );
@@ -542,11 +522,9 @@ export function TwoLevelSidebar({
   searchValue,
   onSearchChange,
   footer,
-  defaultCollapsed = false,
   className,
 }: TwoLevelSidebarProps) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
-  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
 
   const toggleExpanded = (itemKey: string) => {
     setExpandedItems((prev) => {
@@ -568,85 +546,42 @@ export function TwoLevelSidebar({
         user={user}
       />
 
-      <aside
-        style={springStyle}
-        className={cn(
-          "bg-black flex flex-col gap-4 items-start p-4 rounded-r-2xl transition-all duration-500 h-full",
-          isCollapsed ? "w-16 min-w-16 px-0" : "w-80",
-        )}
-      >
-        {!isCollapsed && (
-          <div className="relative shrink-0 w-full">
-            <div className="flex items-center p-1 w-full">
-              <div className="h-10 w-8 flex items-center justify-center pl-2">
-                {brand.logo}
-              </div>
-              <div className="px-2 py-1">
-                <div className="font-lexend font-semibold text-[16px] text-neutral-50">
-                  {brand.name}
-                </div>
+      <aside className="bg-black flex flex-col gap-4 items-start p-4 rounded-r-2xl h-full w-[22rem]">
+        <div className="relative shrink-0 w-full">
+          <div className="flex items-center p-1 w-full">
+            <div className="h-10 w-8 flex items-center justify-center pl-2">
+              {brand.logo}
+            </div>
+            <div className="px-2 py-1">
+              <div className="font-lexend font-semibold text-[16px] text-neutral-50">
+                {brand.name}
               </div>
             </div>
           </div>
-        )}
+        </div>
 
-        <PanelTitle
-          title={panel.title}
-          onToggleCollapse={() => setIsCollapsed((s) => !s)}
-          isCollapsed={isCollapsed}
-        />
+        <PanelTitle title={panel.title} />
 
         <SearchContainer
-          isCollapsed={isCollapsed}
           placeholder={searchPlaceholder}
           value={searchValue}
           onChange={onSearchChange}
         />
 
-        <div
-          style={springStyle}
-          className={cn(
-            "flex flex-col w-full flex-1 min-h-0 overflow-y-auto transition-all duration-500",
-            isCollapsed ? "gap-2 items-center" : "gap-4 items-start",
-          )}
-        >
+        <div className="flex flex-col w-full flex-1 min-h-0 overflow-y-auto gap-4 items-start">
           {panel.sections.map((section, index) => (
             <MenuSection
               key={`${activeSection}-${section.title}-${index}`}
               section={section}
               expandedItems={expandedItems}
               onToggleExpanded={toggleExpanded}
-              isCollapsed={isCollapsed}
             />
           ))}
         </div>
 
-        {!isCollapsed && footer && (
-          <div className="w-full shrink-0 px-1">{footer}</div>
-        )}
+        {footer && <div className="w-full shrink-0 px-1">{footer}</div>}
 
-        {!isCollapsed && user && (
-          <div className="w-full mt-auto pt-2 border-t border-neutral-800 shrink-0">
-            <div className="flex items-center gap-2 px-2 py-2">
-              <AvatarCircle
-                avatarUrl={user.avatarUrl}
-                name={user.name}
-                status={user.status}
-              />
-              <div className="font-lexend text-[14px] text-neutral-50 truncate">
-                {user.name}
-              </div>
-              <button
-                type="button"
-                onClick={user.onMenuClick}
-                aria-label="Kullanıcı menüsü"
-                className="ml-auto size-8 rounded-md flex items-center justify-center text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 shrink-0"
-              >
-                <OverflowMenuHorizontal size={16} />
-              </button>
-            </div>
-          </div>
-        )}
+        {user && <UserBar user={user} />}
       </aside>
     </div>
   );

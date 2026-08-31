@@ -16,15 +16,23 @@ public final class VoiceDtos {
             String avatarUrl,
             boolean muted,
             boolean deafened,
-            boolean screenSharing) {
+            boolean screenSharing,
+            boolean cameraOn) {
 
-        public VoiceParticipant withState(boolean muted, boolean deafened, boolean screenSharing) {
+        public VoiceParticipant withState(boolean muted, boolean deafened,
+                boolean screenSharing, boolean cameraOn) {
             return new VoiceParticipant(userId, username, displayName, avatarUrl,
-                    muted, deafened, screenSharing);
+                    muted, deafened, screenSharing, cameraOn);
         }
     }
 
-    public record VoiceStateRequest(boolean muted, boolean deafened, boolean screenSharing) {
+    /**
+     * cameraOn ve screenSharing ayni anda true olmaz: mesh'te kisi basina tek
+     * video track tasiniyor, alici taraf da gelen goruntunun kamera mi ekran mi
+     * oldugunu ancak bu bayraklardan anliyor.
+     */
+    public record VoiceStateRequest(boolean muted, boolean deafened,
+            boolean screenSharing, boolean cameraOn) {
     }
 
     /** /topic/voice.{channelId} uzerinden yayinlanan olaylar. */

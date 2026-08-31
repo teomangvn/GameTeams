@@ -12,6 +12,8 @@ interface AuthState {
   logout: () => Promise<void>;
   /** Sayfa yenilendiğinde refresh cookie'sinden oturumu kurtarır. */
   restore: () => Promise<void>;
+  /** Profil güncellendiğinde sunucudan dönen kullanıcıyı yerleştirir. */
+  setUser: (user: AuthUser) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -30,6 +32,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     await authApi.logout();
     set({ user: null });
   },
+
+  setUser: (user) => set({ user }),
 
   restore: async () => {
     try {

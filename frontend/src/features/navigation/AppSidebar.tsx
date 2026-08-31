@@ -296,10 +296,16 @@ function buildDmPanel(
 function buildSettingsPanel(
   isAdmin: boolean,
   onOpenAdmin: () => void,
+  onOpenProfile: () => void,
   onLogout: () => void,
 ): SidebarPanel {
   const accountItems: SidebarMenuItem[] = [
-    { id: "s-profile", icon: <UserMultiple size={16} className={iconClass} />, label: "Profil" },
+    {
+      id: "s-profile",
+      icon: <UserMultiple size={16} className={iconClass} />,
+      label: "Profil",
+      onSelect: onOpenProfile,
+    },
   ];
 
   // Yonetim baglantisi yalnizca yoneticilere gosterilir.
@@ -361,6 +367,7 @@ export interface AppSidebarProps {
   onToggleMute: () => void;
   onToggleDeafen: () => void;
   onToggleScreenShare: () => void;
+  onToggleCamera: () => void;
   onDisconnectVoice: () => void;
 }
 
@@ -386,6 +393,7 @@ export function AppSidebar({
   onToggleMute,
   onToggleDeafen,
   onToggleScreenShare,
+  onToggleCamera,
   onDisconnectVoice,
   games,
   ticket,
@@ -459,6 +467,7 @@ export function AppSidebar({
         return buildSettingsPanel(
           authUser?.role === "ADMIN",
           () => navigate("/admin"),
+          () => navigate("/profile"),
           () => void logout(),
         );
       default:
@@ -536,9 +545,11 @@ export function AppSidebar({
             muted={voice.muted}
             deafened={voice.deafened}
             screenSharing={voice.screenSharing}
+            cameraOn={voice.cameraOn}
             onToggleMute={onToggleMute}
             onToggleDeafen={onToggleDeafen}
             onToggleScreenShare={onToggleScreenShare}
+            onToggleCamera={onToggleCamera}
             onDisconnect={onDisconnectVoice}
           />
         )
@@ -547,7 +558,7 @@ export function AppSidebar({
         name: authUser?.displayName ?? "",
         avatarUrl: authUser?.avatarUrl ?? undefined,
         status: "online",
-        onMenuClick: () => void logout(),
+        onLogout: () => void logout(),
       }}
     />
   );

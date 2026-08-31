@@ -16,9 +16,18 @@ public record GameTeamsProperties(
         Jwt jwt,
         Admin admin,
         Webrtc webrtc,
-        Cookie cookie) {
+        Cookie cookie,
+        Uploads uploads) {
 
     public record Cors(List<String> allowedOrigins) {
+    }
+
+    /**
+     * Avatar dosyalari diske yazilir; tek EC2 uzerinde calistigi icin nesne
+     * deposu yerine bir docker volume yeterli. maxBytes hem burada hem
+     * spring.servlet.multipart tarafinda sinirlanir.
+     */
+    public record Uploads(String avatarDir, long maxAvatarBytes) {
     }
 
     public record Jwt(String secret, Duration accessTokenTtl, Duration refreshTokenTtl) {

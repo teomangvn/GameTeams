@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -51,6 +52,10 @@ public class SecurityConfig {
                         .requestMatchers("/error").permitAll()
                         // STOMP handshake'i açık; kimlik CONNECT frame'indeki JWT ile doğrulanır.
                         .requestMatchers("/ws/**").permitAll()
+                        // Avatar gorselleri <img src> ile cekiliyor ve tarayici o
+                        // istekte Authorization basligi gondermez. Dosya adlari
+                        // rastgele UUID; sirali tahmin edilemez, gizli veri de yok.
+                        .requestMatchers(HttpMethod.GET, "/api/users/avatars/**").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 // Varsayılan davranış kimliksiz istekte 403 döner; REST istemcisinin

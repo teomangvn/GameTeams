@@ -5,6 +5,8 @@ import {
   VolumeMute,
   Screen,
   ScreenOff,
+  Video,
+  VideoOff,
   PhoneOff,
   SignalStrength,
 } from "@carbon/icons-react";
@@ -25,9 +27,11 @@ export interface VoiceControlBarProps {
   muted: boolean;
   deafened: boolean;
   screenSharing: boolean;
+  cameraOn: boolean;
   onToggleMute: () => void;
   onToggleDeafen: () => void;
   onToggleScreenShare: () => void;
+  onToggleCamera: () => void;
   onDisconnect: () => void;
 }
 
@@ -72,9 +76,11 @@ export function VoiceControlBar({
   muted,
   deafened,
   screenSharing,
+  cameraOn,
   onToggleMute,
   onToggleDeafen,
   onToggleScreenShare,
+  onToggleCamera,
   onDisconnect,
 }: VoiceControlBarProps) {
   return (
@@ -117,6 +123,14 @@ export function VoiceControlBar({
           onClick={onToggleScreenShare}
         >
           {screenSharing ? <ScreenOff size={16} /> : <Screen size={16} />}
+        </ControlButton>
+
+        <ControlButton
+          label={cameraOn ? "Kamerayı kapat" : "Kamerayı aç"}
+          active={cameraOn}
+          onClick={onToggleCamera}
+        >
+          {cameraOn ? <Video size={16} /> : <VideoOff size={16} />}
         </ControlButton>
       </div>
     </div>

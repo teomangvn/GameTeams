@@ -89,14 +89,14 @@ public class VoiceStateService {
     }
 
     public Optional<VoiceParticipant> updateState(UUID channelId, UUID userId,
-            boolean muted, boolean deafened, boolean screenSharing) {
+            boolean muted, boolean deafened, boolean screenSharing, boolean cameraOn) {
         Object raw = redis.opsForHash().get(CHANNEL_KEY + channelId, userId.toString());
         if (raw == null) {
             return Optional.empty();
         }
 
         VoiceParticipant updated = deserialize(raw.toString())
-                .withState(muted, deafened, screenSharing);
+                .withState(muted, deafened, screenSharing, cameraOn);
         redis.opsForHash().put(CHANNEL_KEY + channelId, userId.toString(), serialize(updated));
         return Optional.of(updated);
     }
