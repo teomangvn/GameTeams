@@ -24,6 +24,7 @@ import { toast } from "@/stores/toastStore";
 import { useMatchmaking } from "@/features/matchmaking/useMatchmaking";
 import { useVoiceSession } from "@/features/voice/useVoiceSession";
 import VoiceStage from "@/features/voice/VoiceStage";
+import VoiceGrid from "@/features/voice/VoiceGrid";
 import AppBackground from "@/features/shell/AppBackground";
 
 /**
@@ -38,6 +39,12 @@ export function AppShell() {
   const [roomDialogOpen, setRoomDialogOpen] = useState(false);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [prompt, setPrompt] = useState<"channel" | "friend" | null>(null);
+  /**
+   * Ses izgarasi mi sohbet mi gosterilecek. Ses baglantisi route'tan bagimsiz
+   * yasiyor; kullanici sese bagliyken metin kanalina gecebilmeli, bu yuzden
+   * "bagli olmak" ile "izgarayi goruyor olmak" ayri durumlar.
+   */
+  const [voiceViewOpen, setVoiceViewOpen] = useState(false);
 
   const voice = useVoiceSession();
   const queryClient = useQueryClient();
@@ -81,7 +88,9 @@ export function AppShell() {
 
   const handleJoinVoice = useCallback(
     (channel: Channel) => {
-      if (activeRoom) void voice.connect(channel.id, channel.name, activeRoom.name);
+      if (!activeRoom) return;
+      void voice.connect(channel.id, channel.name, activeRoom.name);
+      setVoiceViewOpen(true);
     },
     [activeRoom, voice],
   );
@@ -137,7 +146,10 @@ export function AppShell() {
           activeSection={activeSection}
           onSectionChange={setActiveSection}
           activeChannelId={activeChannelId}
-          onSelectChannel={(channel) => setActiveChannelId(channel.id)}
+          onSelectChannel={(channel) => {
+            setActiveChannelId(channel.id);
+            setVoiceViewOpen(false);
+          }}
           onJoinVoice={handleJoinVoice}
           onCreateChannel={() => setPrompt("channel")}
           onOpenRoomDialog={() => setRoomDialogOpen(true)}
@@ -145,7 +157,10 @@ export function AppShell() {
           incomingRequests={incomingQuery.data ?? []}
           conversations={conversationsQuery.data ?? []}
           activeConversationId={activeConversation?.id ?? null}
-          onSelectConversation={setActiveConversation}
+          onSelectConversation={(conversation) => {
+            setActiveConversation(conversation);
+            setVoiceViewOpen(false);
+          }}
           onOpenDmWith={(userId) => void handleOpenDmWith(userId)}
           onAcceptFriendRequest={(id) => acceptRequest.mutate(id)}
           onAddFriend={() => setPrompt("friend")}
@@ -158,9 +173,16 @@ export function AppShell() {
           onToggleMute={voice.toggleMute}
           onToggleDeafen={voice.toggleDeafen}
           onToggleScreenShare={voice.toggleScreenShare}
-          onDisconnectVoice={voice.disconnect}
+          onToggleCamera={voice.toggleCamera}
+          onDisconnectVoice={() => {
+            voice.disconnect();
+            setVoiceViewOpen(false);
+          }}
         />
 
+        {voiceViewOpen && voice.session ? (
+          <VoiceGrid session={voice.session} />
+        ) : (
         <ChatArea
           channel={activeChannel}
           conversation={activeConversation}
@@ -173,8 +195,9 @@ export function AppShell() {
               : "Soldaki raydan bir oda seçip metin kanalına tıkla."
           }
         />
+        )}
 
-        {membersVisible && isRoomSection && !activeConversation && membersQuery.data && (
+        {!voiceViewOpen && membersVisible && isRoomSection && !activeConversation && membersQuery.data && (
           <MemberList members={membersQuery.data} />
         )}
       </div>

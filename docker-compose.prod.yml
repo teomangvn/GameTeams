@@ -44,6 +44,12 @@ services:
       MAIL_USERNAME: ${MAIL_USERNAME}
       MAIL_PASSWORD: ${MAIL_PASSWORD}
       MAIL_FROM: ${MAIL_FROM}
+      # Bu ikisi .env'de olsa bile burada listelenmezse konteynere ulasmaz ve
+      # application.yml varsayilani olan false gecerli olur. SES 587'de STARTTLS
+      # zorunlu; kapali kalirsa kimlik bilgileri duz metin gitme riski tasir.
+      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-true}
+      MAIL_SMTP_STARTTLS: ${MAIL_SMTP_STARTTLS:-true}
+      AVATAR_DIR: /app/uploads/avatars
       STUN_URLS: ${STUN_URLS}
       TURN_URLS: ${TURN_URLS}
       TURN_SECRET: ${TURN_SECRET}
@@ -51,6 +57,9 @@ services:
       # ADMIN_PASSWORD bilerek gecilmiyor: tanimsiz oldugunda AdminUserSeeder
       # calismaz. Prod'da admin hesabi seed edilmemeli; hesap kayit akisiyla
       # olusturulup veritabanindan role='ADMIN' yapilir.
+    volumes:
+      # Avatarlar konteyner disinda yasamali; imaj her deploy'da degisiyor.
+      - avatar-data:/app/uploads/avatars
     depends_on:
       postgres:
         condition: service_healthy

@@ -52,3 +52,27 @@ export function describeScreenShareError(error: unknown): string | null {
   }
   return "Ekran paylaşımı başlatılamadı.";
 }
+
+export function describeCameraError(error: unknown): string {
+  if (!isSecureMediaContext()) {
+    return "Kamera HTTPS gerektiriyor. Tarayıcı, güvenli olmayan bağlantıda kameraya izin vermiyor.";
+  }
+
+  const name = error instanceof Error ? error.name : "";
+
+  switch (name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "Kamera izni reddedildi. Adres çubuğundaki kilit simgesinden izin verebilirsin.";
+    case "NotFoundError":
+    case "DevicesNotFoundError":
+      return "Kamera bulunamadı. Bir kamera bağlı mı kontrol et.";
+    case "NotReadableError":
+    case "TrackStartError":
+      return "Kameraya erişilemedi; başka bir uygulama kullanıyor olabilir.";
+    case "OverconstrainedError":
+      return "Kamera istenen çözünürlüğü desteklemiyor.";
+    default:
+      return "Kamera açılamadı.";
+  }
+}

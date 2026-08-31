@@ -6,6 +6,7 @@ import AdminPage from '@/features/admin/AdminPage'
 import AppShell from '@/features/shell/AppShell'
 import ForgotPasswordPage from '@/features/auth/ForgotPasswordPage'
 import LoginPage from '@/features/auth/LoginPage'
+import ProfilePage from '@/features/profile/ProfilePage'
 import RegisterPage from '@/features/auth/RegisterPage'
 import ResetPasswordPage from '@/features/auth/ResetPasswordPage'
 import VerifyEmailPage from '@/features/auth/VerifyEmailPage'
@@ -45,6 +46,15 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <AppShell />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
               </ProtectedRoute>
             }
           />

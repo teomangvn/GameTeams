@@ -8,6 +8,7 @@ export interface VoiceParticipant {
   muted: boolean;
   deafened: boolean;
   screenSharing: boolean;
+  cameraOn: boolean;
 }
 
 export type VoiceEvent = {

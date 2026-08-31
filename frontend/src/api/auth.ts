@@ -8,6 +8,7 @@ export interface AuthUser {
   displayName: string;
   email: string;
   avatarUrl: string | null;
+  bio: string | null;
   role: Role;
   emailVerified: boolean;
   region: string | null;

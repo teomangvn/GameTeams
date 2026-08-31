@@ -26,6 +26,8 @@ coverage/
 *.crt
 *.p12
 secrets/
+# AWS SES konsolundan indirilen SMTP kimlik bilgisi CSV'leri
+*credentials*.csv
 
 # --- IDE ---
 .idea/
