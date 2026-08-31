@@ -106,6 +106,26 @@ export function SubmitButton({
   );
 }
 
+export function SelectInput({
+  className,
+  children,
+  ...props
+}: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <select
+      {...props}
+      className={cn(
+        "w-full h-10 rounded-lg bg-neutral-950 border border-neutral-800 px-3",
+        "font-lexend text-[14px] text-neutral-50",
+        "outline-none focus:border-neutral-600 transition-colors",
+        className,
+      )}
+    >
+      {children}
+    </select>
+  );
+}
+
 export function FormAlert({ tone, children }: { tone: "error" | "success"; children: React.ReactNode }) {
   return (
     <div

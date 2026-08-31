@@ -10,6 +10,7 @@ import {
   Add,
   Locked,
   Microphone,
+  Video,
   MicrophoneOff,
   Headphones,
   UserFollow,
@@ -297,6 +298,7 @@ function buildSettingsPanel(
   isAdmin: boolean,
   onOpenAdmin: () => void,
   onOpenProfile: () => void,
+  onOpenDeviceSettings: () => void,
   onLogout: () => void,
 ): SidebarPanel {
   const accountItems: SidebarMenuItem[] = [
@@ -332,8 +334,24 @@ function buildSettingsPanel(
       {
         title: "Ses ve Görüntü",
         items: [
-          { id: "s-mic", icon: <Microphone size={16} className={iconClass} />, label: "Mikrofon" },
-          { id: "s-out", icon: <Headphones size={16} className={iconClass} />, label: "Çıkış aygıtı" },
+          {
+            id: "s-mic",
+            icon: <Microphone size={16} className={iconClass} />,
+            label: "Mikrofon ve gürültü engelleme",
+            onSelect: onOpenDeviceSettings,
+          },
+          {
+            id: "s-out",
+            icon: <Headphones size={16} className={iconClass} />,
+            label: "Çıkış aygıtı",
+            onSelect: onOpenDeviceSettings,
+          },
+          {
+            id: "s-cam",
+            icon: <Video size={16} className={iconClass} />,
+            label: "Kamera",
+            onSelect: onOpenDeviceSettings,
+          },
         ],
       },
     ],
@@ -468,6 +486,7 @@ export function AppSidebar({
           authUser?.role === "ADMIN",
           () => navigate("/admin"),
           () => navigate("/profile"),
+          () => navigate("/settings"),
           () => void logout(),
         );
       default:

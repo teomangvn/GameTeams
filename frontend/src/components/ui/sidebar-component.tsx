@@ -236,15 +236,21 @@ function IconRail({
   user?: SidebarUser;
 }) {
   return (
+    // px-2 (p-4 degil): ray 64px, butonlar 40px. Yatay dolgu 16px oldugunda
+    // ic genislik 32px'e dusuyor ve butonlar tasiyordu. Butonlar items-center
+    // ile ortalandigi icin gorunum ayni, yalnizca tasma bitiyor.
     <nav
       aria-label={brand.name}
-      className="bg-black flex flex-col gap-2 items-center p-4 w-16 h-full border-r border-neutral-800 rounded-l-2xl"
+      className="bg-black flex flex-col gap-2 items-center px-2 py-4 w-16 h-full border-r border-neutral-800 rounded-l-2xl"
     >
       <div className="mb-2 size-10 flex items-center justify-center shrink-0">
         <div className="size-7 flex items-center justify-center">{brand.logo}</div>
       </div>
 
-      <div className="flex flex-col gap-2 w-full items-center overflow-y-auto">
+      {/* overflow-x acikca kapatildi: overflow-y-auto tek basina birakilirsa
+          CSS diger ekseni de auto'ya cevirir ve kucuk bir tasmada bile yatay
+          cubuk cikar. */}
+      <div className="flex flex-col gap-2 w-full items-center overflow-y-auto overflow-x-hidden">
         {items.map((item) => (
           <React.Fragment key={item.id}>
             {item.separatorBefore && (

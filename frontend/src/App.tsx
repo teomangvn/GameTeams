@@ -7,6 +7,7 @@ import AppShell from '@/features/shell/AppShell'
 import ForgotPasswordPage from '@/features/auth/ForgotPasswordPage'
 import LoginPage from '@/features/auth/LoginPage'
 import ProfilePage from '@/features/profile/ProfilePage'
+import DeviceSettingsPage from '@/features/settings/DeviceSettingsPage'
 import RegisterPage from '@/features/auth/RegisterPage'
 import ResetPasswordPage from '@/features/auth/ResetPasswordPage'
 import VerifyEmailPage from '@/features/auth/VerifyEmailPage'
@@ -55,6 +56,15 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <DeviceSettingsPage />
               </ProtectedRoute>
             }
           />

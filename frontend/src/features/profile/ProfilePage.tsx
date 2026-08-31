@@ -4,7 +4,8 @@ import { ArrowLeft, Camera, TrashCan, User as UserIcon } from "@carbon/icons-rea
 
 import { ApiError } from "@/api/client";
 import { usersApi } from "@/api/users";
-import { Field, FormAlert, SubmitButton, TextInput } from "@/features/auth/AuthLayout";
+import { Field, FormAlert, SelectInput, SubmitButton, TextInput } from "@/features/auth/AuthLayout";
+import { LANGUAGES, REGIONS, withCurrent } from "@/lib/profileOptions";
 import { cn } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
@@ -192,20 +193,30 @@ export function ProfilePage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label="Bölge">
-                <TextInput
+                <SelectInput
                   value={region}
-                  maxLength={64}
                   onChange={(event) => setRegion(event.target.value)}
-                  placeholder="EU"
-                />
+                >
+                  <option value="">Seçilmedi</option>
+                  {withCurrent(REGIONS, region).map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </SelectInput>
               </Field>
               <Field label="Dil">
-                <TextInput
+                <SelectInput
                   value={language}
-                  maxLength={32}
                   onChange={(event) => setLanguage(event.target.value)}
-                  placeholder="tr"
-                />
+                >
+                  <option value="">Seçilmedi</option>
+                  {withCurrent(LANGUAGES, language).map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </SelectInput>
               </Field>
             </div>
 

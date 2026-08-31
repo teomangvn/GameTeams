@@ -1,0 +1,47 @@
+<!doctype html>
+<html xmlns:th="http://www.thymeleaf.org" lang="tr">
+<head>
+  <meta charset="utf-8">
+  <title>GameTeams giriş kodun</title>
+</head>
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+               style="max-width:520px;background:#141414;border:1px solid #262626;border-radius:16px;padding:32px;">
+          <tr>
+            <td>
+              <h1 style="margin:0 0 8px;font-size:20px;color:#fafafa;">GameTeams</h1>
+              <p style="margin:0 0 24px;font-size:14px;color:#a3a3a3;">Yeni cihazdan giriş</p>
+
+              <p style="margin:0 0 16px;font-size:15px;color:#e5e5e5;line-height:1.6;">
+                Merhaba <strong th:text="${displayName}">oyuncu</strong>,
+              </p>
+              <p style="margin:0 0 24px;font-size:15px;color:#e5e5e5;line-height:1.6;">
+                Tanımadığımız bir cihazdan hesabına giriş yapılmaya çalışıldı. Devam etmek
+                için aşağıdaki kodu giriş ekranına yaz.
+              </p>
+
+              <div style="margin:0 0 24px;padding:20px;background:#0a0a0a;border:1px solid #262626;border-radius:12px;text-align:center;">
+                <span th:text="${code}"
+                      style="font-size:32px;letter-spacing:8px;color:#fafafa;font-weight:600;">000000</span>
+              </div>
+
+              <p style="margin:0 0 24px;font-size:14px;color:#a3a3a3;line-height:1.6;">
+                Cihaz: <strong th:text="${device}" style="color:#e5e5e5;">Bilinmeyen cihaz</strong><br>
+                Kod 10 dakika geçerlidir.
+              </p>
+
+              <p style="margin:0;padding:16px;background:#1a0f0f;border:1px solid #4a1f1f;border-radius:12px;font-size:14px;color:#fca5a5;line-height:1.6;">
+                Bu girişi sen yapmadıysan kodu <strong>kimseyle paylaşma</strong> ve şifreni
+                değiştir. Kod olmadan hesabına girilemez.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

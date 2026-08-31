@@ -84,6 +84,13 @@ gameteams:
     username: ${ADMIN_USERNAME:admin}
     email: ${ADMIN_EMAIL:}
     password: ${ADMIN_PASSWORD:}
+  security:
+    # Taninmayan cihazdan giriste e-postaya kod gonderilir.
+    # KURTARMA: e-posta gitmiyorsa false yapip backend'i yeniden baslat,
+    # aksi halde kimse giris yapamaz.
+    device-verification: ${DEVICE_VERIFICATION:true}
+    challenge-ttl: ${DEVICE_CHALLENGE_TTL:PT10M}
+    trust-ttl: ${DEVICE_TRUST_TTL:P90D}
   uploads:
     # Tek EC2 uzerinde calisiyoruz; nesne deposu yerine docker volume.
     avatar-dir: ${AVATAR_DIR:./uploads/avatars}

@@ -47,6 +47,13 @@ public class SmtpEmailSender implements EmailSender {
                 Map.of("displayName", displayName, "resetUrl", resetUrl));
     }
 
+    @Override
+    @Async
+    public void sendLoginCodeEmail(String to, String displayName, String code, String device) {
+        send(to, "GameTeams giris kodun: " + code, "mail/login-code",
+                Map.of("displayName", displayName, "code", code, "device", device));
+    }
+
     private void send(String to, String subject, String template, Map<String, Object> variables) {
         try {
             Context context = new Context();

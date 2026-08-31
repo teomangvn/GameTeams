@@ -8,7 +8,16 @@ interface AuthState {
   user: AuthUser | null;
   /** Açılıştaki oturum geri yükleme tamamlandı mı? */
   initialized: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  /**
+   * Oturum acildiysa null doner; cihaz dogrulamasi gerekiyorsa istek kimligi
+   * ve maskelenmis adres doner.
+   */
+  login: (
+    email: string,
+    password: string,
+  ) => Promise<{ challengeId: string; maskedEmail: string } | null>;
+  /** Cihaz dogrulama kodunu tamamlayip oturumu acar. */
+  verifyDevice: (challengeId: string, code: string, rememberDevice: boolean) => Promise<void>;
   logout: () => Promise<void>;
   /** Sayfa yenilendiğinde refresh cookie'sinden oturumu kurtarır. */
   restore: () => Promise<void>;
@@ -21,7 +30,21 @@ export const useAuthStore = create<AuthState>((set) => ({
   initialized: false,
 
   login: async (email, password) => {
-    const { user } = await authApi.login({ email, password });
+    const result = await authApi.login({ email, password });
+
+    if (result.status === "DEVICE_VERIFICATION_REQUIRED") {
+      return {
+        challengeId: result.challengeId ?? "",
+        maskedEmail: result.maskedEmail ?? "",
+      };
+    }
+
+    set({ user: result.auth?.user ?? null });
+    return null;
+  },
+
+  verifyDevice: async (challengeId, code, rememberDevice) => {
+    const { user } = await authApi.verifyDevice({ challengeId, code, rememberDevice });
     set({ user });
   },
 

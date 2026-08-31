@@ -4,6 +4,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.UUID;
 import java.util.Optional;
 
 import org.slf4j.Logger;
@@ -40,6 +41,8 @@ public class AuthService {
     private final EmailSender emailSender;
     private final GameTeamsProperties properties;
 
+    private final DeviceVerificationService deviceVerification;
+
     AuthService(UserRepository users,
             RefreshTokenRepository refreshTokens,
             RefreshTokenRevoker revoker,
@@ -48,6 +51,7 @@ public class AuthService {
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
             EmailSender emailSender,
+            DeviceVerificationService deviceVerification,
             GameTeamsProperties properties) {
         this.users = users;
         this.refreshTokens = refreshTokens;
@@ -57,6 +61,7 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.emailSender = emailSender;
+        this.deviceVerification = deviceVerification;
         this.properties = properties;
     }
 
@@ -119,7 +124,8 @@ public class AuthService {
     /* ------------------------------- Giriş -------------------------------- */
 
     @Transactional
-    public LoginResult login(LoginRequest request, String userAgent, String ip) {
+    public LoginOutcome login(LoginRequest request, String userAgent, String ip,
+            String deviceToken) {
         User user = users.findByEmailIgnoreCase(request.email())
                 .filter(u -> passwordEncoder.matches(request.password(), u.getPasswordHash()))
                 // E-posta yanlış mı şifre mi — ayırt edilmemeli.
@@ -137,8 +143,50 @@ public class AuthService {
                     "Giriş yapabilmek için önce e-postanı doğrulaman gerekiyor.");
         }
 
+        // Cihaz taninmiyorsa oturum acilmaz: once e-postaya giden kod
+        // dogrulanmali. Kimlik dogru oldugu icin kullanici bilgisi sizmaz --
+        // kod zaten yalnizca hesabin kendi adresine gider.
+        if (!deviceVerification.isTrusted(user, deviceToken)) {
+            UUID challengeId = deviceVerification.startChallenge(user, userAgent, ip);
+            return new LoginOutcome.ChallengeRequired(challengeId, maskEmail(user.getEmail()));
+        }
+
+        user.setLastSeenAt(Instant.now());
+        return new LoginOutcome.Authenticated(issueTokens(user, userAgent, ip));
+    }
+
+    /** Dogrulanmis kullanicinin cihazini hatirlar; cereze yazilacak token doner. */
+    @Transactional
+    public String trustCurrentDevice(UUID userId, String userAgent) {
+        User user = users.findById(userId)
+                .orElseThrow(() -> ApiException.unauthorized("USER_NOT_FOUND", "Hesap bulunamadi."));
+        return deviceVerification.trustDevice(user, userAgent);
+    }
+
+    public Duration deviceTrustTtl() {
+        return deviceVerification.trustTtl();
+    }
+
+    /** Kod dogrulandiktan sonra oturumu acar. */
+    @Transactional
+    public LoginResult completeDeviceChallenge(UUID challengeId, String code,
+            String userAgent, String ip) {
+
+        User user = deviceVerification.completeChallenge(challengeId, code);
         user.setLastSeenAt(Instant.now());
         return issueTokens(user, userAgent, ip);
+    }
+
+    /**
+     * Adresi kismen gizler: kullanici hangi kutuya bakacagini anlasin ama
+     * ekrani goren biri tam adresi ogrenmesin.
+     */
+    private static String maskEmail(String email) {
+        int at = email.indexOf('@');
+        if (at <= 1) {
+            return email;
+        }
+        return email.charAt(0) + "***" + email.substring(at - 1);
     }
 
     /**
@@ -258,6 +306,20 @@ public class AuthService {
     }
 
     /** Servis katmanının çıktısı: gövde + cookie'ye yazılacak refresh token. */
+    /**
+     * Girisin sonucu: ya oturum acildi ya da cihaz dogrulamasi bekleniyor.
+     * Iki durumu ayri tipler olarak dondurmek cagirani her ikisini de ele
+     * almaya zorlar.
+     */
+    public sealed interface LoginOutcome {
+
+        record Authenticated(LoginResult result) implements LoginOutcome {
+        }
+
+        record ChallengeRequired(UUID challengeId, String maskedEmail) implements LoginOutcome {
+        }
+    }
+
     public record LoginResult(AuthResponse response, String refreshToken, Duration refreshTtl) {
     }
 }

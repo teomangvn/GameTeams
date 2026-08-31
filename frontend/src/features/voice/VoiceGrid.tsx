@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import {
+  Chat,
   MicrophoneOff,
   Share,
   Video,
@@ -9,6 +10,7 @@ import {
 
 import type { VoiceParticipant } from "@/api/voice";
 import type { VoiceSession } from "@/features/voice/useVoiceSession";
+import { useSpeakingDetection } from "@/features/voice/useSpeaking";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -19,8 +21,26 @@ import { useAuthStore } from "@/stores/authStore";
  * Kare sayisi arttikca izgara sutun sayisi buyur, boylece kareler ekrani
  * dengeli boler.
  */
-export function VoiceGrid({ session }: { session: VoiceSession }) {
+export function VoiceGrid({
+  session,
+  chatOpen,
+  onToggleChat,
+}: {
+  session: VoiceSession;
+  chatOpen: boolean;
+  onToggleChat: () => void;
+}) {
   const self = useAuthStore((s) => s.user);
+
+  // Konusma gostergesi icin ses tasiyan tum akislar: kendi mikrofonumuz ve
+  // uzak katilimcilar. Seviye yerelde olculur, sunucuya ek sinyal gitmez.
+  const audioStreams: Record<string, MediaStream> = {};
+  if (session.localAudio) audioStreams.self = session.localAudio;
+  for (const participant of session.participants) {
+    const stream = session.remoteStreams[participant.userId];
+    if (stream) audioStreams[participant.userId] = stream;
+  }
+  const speaking = useSpeakingDetection(audioStreams);
 
   const tiles: TileData[] = [
     {
@@ -33,6 +53,9 @@ export function VoiceGrid({ session }: { session: VoiceSession }) {
       cameraOn: session.cameraOn,
       stream: session.localVideo,
       isSelf: true,
+      // Susturulmusken cerceve yanmasin: track devre disi oldugu icin analyser
+      // zaten sessizlik gorur, ama deafened durumunda da acikca kapatiyoruz.
+      speaking: speaking.has("self") && !session.muted,
     },
     ...session.participants.map((participant) => ({
       key: participant.userId,
@@ -44,6 +67,7 @@ export function VoiceGrid({ session }: { session: VoiceSession }) {
       cameraOn: participant.cameraOn,
       stream: streamWithVideo(session, participant),
       isSelf: false,
+      speaking: speaking.has(participant.userId) && !participant.muted,
     })),
   ];
 
@@ -60,6 +84,23 @@ export function VoiceGrid({ session }: { session: VoiceSession }) {
         <span className="ml-auto font-lexend text-[13px] text-neutral-500 shrink-0">
           {tiles.length} kişi
         </span>
+
+        <button
+          type="button"
+          onClick={onToggleChat}
+          aria-pressed={chatOpen}
+          title="Kanal sohbeti"
+          className={cn(
+            "ml-2 h-8 px-2.5 rounded-md shrink-0 inline-flex items-center gap-1.5",
+            "font-lexend text-[13px] transition-colors",
+            chatOpen
+              ? "bg-neutral-800 text-neutral-100"
+              : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100",
+          )}
+        >
+          <Chat size={16} />
+          Sohbet
+        </button>
       </header>
 
       <div className="flex-1 min-h-0 overflow-y-auto p-4">
@@ -86,6 +127,7 @@ interface TileData {
   cameraOn: boolean;
   stream: MediaStream | null;
   isSelf: boolean;
+  speaking: boolean;
 }
 
 /**
@@ -113,7 +155,11 @@ function Tile({ tile }: { tile: TileData }) {
     <figure
       className={cn(
         "relative min-h-40 rounded-xl overflow-hidden bg-black border flex items-center justify-center",
+        "transition-shadow duration-150",
         tile.screenSharing ? "border-emerald-500/40" : "border-neutral-800",
+        // Konusan kisinin cercevesi: ring, border'in yerini almaz ustune biner,
+        // boylece ekran paylasimi rengi kaybolmaz ve kare ziplamaz.
+        tile.speaking && "ring-2 ring-emerald-400 ring-offset-0",
       )}
     >
       {showVideo ? (

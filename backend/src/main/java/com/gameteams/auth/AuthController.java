@@ -17,10 +17,12 @@ import org.springframework.web.bind.annotation.RestController;
 import com.gameteams.auth.AuthDtos.AuthResponse;
 import com.gameteams.auth.AuthDtos.EmailOnlyRequest;
 import com.gameteams.auth.AuthDtos.LoginRequest;
+import com.gameteams.auth.AuthDtos.LoginResponse;
 import com.gameteams.auth.AuthDtos.MessageResponse;
 import com.gameteams.auth.AuthDtos.RegisterRequest;
 import com.gameteams.auth.AuthDtos.ResetPasswordRequest;
 import com.gameteams.auth.AuthDtos.UserResponse;
+import com.gameteams.auth.AuthDtos.VerifyDeviceRequest;
 import com.gameteams.auth.AuthDtos.VerifyEmailRequest;
 import com.gameteams.common.ApiException;
 import com.gameteams.common.RateLimiter;
@@ -34,6 +36,8 @@ import jakarta.validation.Valid;
 public class AuthController {
 
     static final String REFRESH_COOKIE = "gt_refresh";
+    /** "Bu cihazi hatirla" isaretlendiginde yazilir; yeni cihaz kontrolunu atlatir. */
+    static final String DEVICE_COOKIE = "gt_device";
 
     private final AuthService authService;
     private final RateLimiter rateLimiter;
@@ -78,14 +82,54 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request,
+    ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request,
             HttpServletRequest http) {
 
         rateLimiter.check("login:" + clientIp(http), 10, Duration.ofMinutes(1),
                 "Çok fazla giriş denemesi. Bir dakika sonra tekrar dene.");
 
-        var result = authService.login(request, http.getHeader(HttpHeaders.USER_AGENT), clientIp(http));
-        return withRefreshCookie(result);
+        var outcome = authService.login(request, http.getHeader(HttpHeaders.USER_AGENT),
+                clientIp(http), readCookie(http, DEVICE_COOKIE));
+
+        if (outcome instanceof AuthService.LoginOutcome.ChallengeRequired challenge) {
+            // Oturum acilmadi: refresh cookie'si yazilmaz.
+            return ResponseEntity.ok(
+                    LoginResponse.challenge(challenge.challengeId(), challenge.maskedEmail()));
+        }
+
+        var result = ((AuthService.LoginOutcome.Authenticated) outcome).result();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, refreshCookie(result.refreshToken(),
+                        result.refreshTtl()).toString())
+                .body(LoginResponse.authenticated(result.response()));
+    }
+
+    /**
+     * Yeni cihaz dogrulamasi. Kod dogruysa oturum acilir; kullanici cihazi
+     * hatirlamak istediyse ayrica uzun omurlu bir cihaz cerezi yazilir.
+     */
+    @PostMapping("/verify-device")
+    ResponseEntity<AuthResponse> verifyDevice(@Valid @RequestBody VerifyDeviceRequest request,
+            HttpServletRequest http) {
+
+        rateLimiter.check("verify-device:" + clientIp(http), 10, Duration.ofMinutes(5),
+                "Çok fazla deneme. Biraz sonra tekrar dene.");
+
+        String userAgent = http.getHeader(HttpHeaders.USER_AGENT);
+        var result = authService.completeDeviceChallenge(
+                request.challengeId(), request.code(), userAgent, clientIp(http));
+
+        var response = ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE,
+                        refreshCookie(result.refreshToken(), result.refreshTtl()).toString());
+
+        if (request.rememberDevice()) {
+            String deviceToken = authService.trustCurrentDevice(result.response().user().id(), userAgent);
+            response.header(HttpHeaders.SET_COOKIE,
+                    deviceCookie(deviceToken, authService.deviceTrustTtl()).toString());
+        }
+
+        return response.body(result.response());
     }
 
     @PostMapping("/refresh")
@@ -159,6 +203,28 @@ public class AuthController {
 
     private ResponseCookie expiredRefreshCookie() {
         return baseRefreshCookie("").maxAge(Duration.ZERO).build();
+    }
+
+    private ResponseCookie deviceCookie(String value, Duration ttl) {
+        return ResponseCookie.from(DEVICE_COOKIE, value)
+                .httpOnly(true)
+                .secure(cookieConfig.secure())
+                .sameSite(cookieConfig.sameSite())
+                .path("/api/auth")
+                .maxAge(ttl)
+                .build();
+    }
+
+    private static String readCookie(HttpServletRequest request, String name) {
+        if (request.getCookies() == null) {
+            return null;
+        }
+        for (var cookie : request.getCookies()) {
+            if (name.equals(cookie.getName())) {
+                return cookie.getValue();
+            }
+        }
+        return null;
     }
 
     private ResponseCookie.ResponseCookieBuilder baseRefreshCookie(String value) {

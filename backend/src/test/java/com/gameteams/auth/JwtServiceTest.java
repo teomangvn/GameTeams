@@ -37,7 +37,8 @@ class JwtServiceTest {
 				new GameTeamsProperties.Admin("admin", "", ""),
 				new GameTeamsProperties.Webrtc(List.of(), List.of(), "", Duration.ofHours(12)),
 				new GameTeamsProperties.Cookie(false, "Lax"),
-				new GameTeamsProperties.Uploads("./uploads/avatars", 2_097_152L)));
+				new GameTeamsProperties.Uploads("./uploads/avatars", 2_097_152L),
+                new GameTeamsProperties.Security(false, java.time.Duration.ofMinutes(10), java.time.Duration.ofDays(90))));
 	}
 
 	@Test
