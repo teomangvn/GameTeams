@@ -245,7 +245,7 @@ export function AppShell() {
         title="Arkadaş ekle"
         description="Kullanıcı adıyla istek gönder. E-posta paylaşmana gerek yok."
         label="Kullanıcı adı"
-        placeholder="teoman"
+        placeholder="oyuncu_42"
         submitLabel="İstek gönder"
         loading={sendFriendRequest.isPending}
         onSubmit={handleAddFriend}

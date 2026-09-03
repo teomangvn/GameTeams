@@ -311,7 +311,7 @@ iter ve sunucu yeni sürümü çeker. Testler kırmızıysa deploy çalışmaz.
 
 ```bash
 # EC2 üzerinde, /opt/gameteams içinde — yalnızca ilk kurulum
-cp .env.example .env && nano .env    # DOMAIN, JWT_SECRET, TURN_SECRET, SES...
+cp .env.example .env && nano .env    # DOMAIN, JWT_SECRET, TURN_SECRET, SMTP...
 ./scripts/deploy.sh --pull           # CI'nın ittiği imajları çeker
 ```
 

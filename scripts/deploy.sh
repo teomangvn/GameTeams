@@ -47,6 +47,25 @@ if [[ -n "${IMAGE_TAG:-}" ]]; then
   echo "==> Surum: ${IMAGE_TAG}"
 fi
 
+# Calisan surumu .env'e yazar.
+#
+# Bunsuz sunucu her yeniden basladiginda gameteams.service "docker compose
+# up -d" calistiriyor, bu da .env'deki :latest etiketini kullaniyor ve docker
+# etiket yerelde zaten var diye yenisini cekmiyordu -- sonuc: gunler oncesinin
+# kodu servis ediliyordu. Somut bir SHA etiketi sabitlemek acilisi belirli
+# kiliyor ve ag baglantisina ihtiyac birakmiyor.
+pin_deployed_images() {
+  [[ -z "${BACKEND_IMAGE:-}" || -z "${FRONTEND_IMAGE:-}" ]] && return 0
+
+  local tmp
+  tmp="$(mktemp)"
+  sed -E -e "s|^BACKEND_IMAGE=.*|BACKEND_IMAGE=${BACKEND_IMAGE}|" -e "s|^FRONTEND_IMAGE=.*|FRONTEND_IMAGE=${FRONTEND_IMAGE}|" .env > "$tmp"
+  # Sirlari tasiyor: izinler daraltilmis halde kalsin.
+  chmod 600 "$tmp"
+  mv "$tmp" .env
+  echo "==> Calisan surum .env'e sabitlendi: ${IMAGE_TAG}"
+}
+
 echo "==> Yapilandirma dosyalari guncelleniyor"
 # Compose, nginx sablonu ve coturn ayarlari repodan gelir; imajlar registry'den.
 # reset --hard: sunucu her zaman main ile birebir ayni olmali. Takip edilmeyen
@@ -95,6 +114,7 @@ health_url="https://${health_domain}/actuator/health/readiness"
 for attempt in $(seq 1 60); do
   if curl -fsS --resolve "${health_domain}:443:127.0.0.1" "$health_url" 2>/dev/null | grep -q '"status":"UP"'; then
     echo "Deploy tamam."
+    pin_deployed_images
     $COMPOSE ps
     # Eski imajlar diski doldurmasin.
     docker image prune -f --filter "until=168h" > /dev/null 2>&1 || true

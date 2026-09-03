@@ -86,7 +86,7 @@ export function RegisterPage() {
           <TextInput
             value={form.username}
             onChange={update("username")}
-            placeholder="teoman"
+            placeholder="oyuncu_42"
             autoComplete="username"
             required
           />
@@ -96,7 +96,7 @@ export function RegisterPage() {
           <TextInput
             value={form.displayName}
             onChange={update("displayName")}
-            placeholder="Teoman"
+            placeholder="Oyuncu"
             required
           />
         </Field>
