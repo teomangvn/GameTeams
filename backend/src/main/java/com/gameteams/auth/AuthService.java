@@ -146,7 +146,7 @@ public class AuthService {
         // Cihaz taninmiyorsa oturum acilmaz: once e-postaya giden kod
         // dogrulanmali. Kimlik dogru oldugu icin kullanici bilgisi sizmaz --
         // kod zaten yalnizca hesabin kendi adresine gider.
-        if (!deviceVerification.isTrusted(user, deviceToken)) {
+        if (deviceVerification.requiresChallenge(user, deviceToken)) {
             UUID challengeId = deviceVerification.startChallenge(user, userAgent, ip);
             return new LoginOutcome.ChallengeRequired(challengeId, maskEmail(user.getEmail()));
         }

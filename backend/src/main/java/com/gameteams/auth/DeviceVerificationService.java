@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.gameteams.common.ApiException;
 import com.gameteams.config.GameTeamsProperties;
 import com.gameteams.mail.EmailSender;
+import com.gameteams.user.Role;
 import com.gameteams.user.User;
 
 /**
@@ -50,8 +51,28 @@ public class DeviceVerificationService {
         }
     }
 
-    public boolean isEnabled() {
-        return config.deviceVerification();
+    /**
+     * Bu giriş için e-posta ile kod doğrulaması gerekiyor mu?
+     *
+     * Yönetici hesabı muaf. Bu bir güvenlik tercihi değil, zorunluluk:
+     * yöneticinin adresi (noreply@gteams.team) yalnızca gönderim için var,
+     * posta kutusu yok. Kod gönderilse hiçbir yere ulaşmaz ve hesap kalıcı
+     * olarak kilitlenir. Yöneticiye gerçekten posta alabilen bir adres
+     * tanımlandığında bu muafiyet kaldırılmalı -- en yetkili hesabın en zayıf
+     * giriş korumasına sahip olması istenen bir durum değil.
+     */
+    @Transactional
+    public boolean requiresChallenge(User user, String deviceToken) {
+        if (!config.deviceVerification()) {
+            return false;
+        }
+
+        if (user.getRole() == Role.ADMIN) {
+            log.debug("Yönetici girişi cihaz doğrulamasından muaf: {}", user.getUsername());
+            return false;
+        }
+
+        return !isTrusted(user, deviceToken);
     }
 
     /**
