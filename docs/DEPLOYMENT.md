@@ -47,7 +47,7 @@ nano .env
 ```
 
 Doldurulması zorunlu: `DOMAIN`, `APP_URL`, `CORS_ALLOWED_ORIGINS`,
-`DB_PASSWORD`, `JWT_SECRET`, `TURN_SECRET`, `TURN_URLS`, SES bilgileri.
+`DB_PASSWORD`, `JWT_SECRET`, `TURN_SECRET`, `TURN_URLS`, SMTP bilgileri.
 
 **`ADMIN_PASSWORD` boş bırakın** — dolu olursa açılışta admin hesabı seed edilir.
 
@@ -113,15 +113,75 @@ TURN_URLS=turn:<DOMAIN>:3478
 `TURN_SECRET` hem coturn'e hem backend'e aynı `.env`'den gider; iki yerde
 farklı olursa tarayıcı TURN'e kimlik doğrulayamaz ve ses kurulmaz.
 
-## 6. AWS SES
+## 6. E-posta (SMTP)
 
-1. SES konsolunda domain doğrulayın, DKIM kayıtlarını Route53'e ekleyin.
-2. SMTP credential üretin → `MAIL_USERNAME` / `MAIL_PASSWORD`.
-3. `MAIL_HOST=email-smtp.<region>.amazonaws.com`, `MAIL_PORT=587`.
+Uygulama düz SMTP kullanır; sağlayıcıya özel tek satır kod yoktur. Geçiş
+yalnızca dört ortam değişkenini değiştirmektir.
 
-> **Sandbox'tan çıkış başvurusunu deploy'dan önce yapın.** Onay 24-48 saat
-> sürebilir ve sandbox'ta yalnızca doğrulanmış adreslere mail gider — yani
-> kayıt onayı gerçek kullanıcılar için çalışmaz.
+**Kullanılan: Brevo (gönderim) + Namecheap Email Forwarding (alım).**
+
+Mail göndermek için posta kutusu gerekmez — gereken şey, alan adının o
+sağlayıcı adına gönderim yapmasına izin veren DNS kayıtlarıdır. Posta kutusu
+yalnızca admin hesabının kod alabilmesi için lazım, onu da ücretsiz
+yönlendirme çözer. Toplam maliyet: sıfır.
+
+### 6.1 Gönderim — Brevo
+
+1. Brevo hesabı açın → **Senders, Domains & Dedicated IPs** → alan adı ekleyin
+   (`gteams.team`).
+2. Brevo size doğrulama için DNS kayıtları verir (DKIM CNAME'leri ve bir
+   doğrulama TXT kaydı). Bunları Namecheap → Advanced DNS altına ekleyin.
+   **Değerleri Brevo panelinden birebir kopyalayın**, elle yazmayın.
+3. **SMTP & API** sekmesinden bir SMTP anahtarı üretin.
+4. `.env`:
+
+```env
+MAIL_HOST=smtp-relay.brevo.com
+MAIL_PORT=587
+MAIL_USERNAME=<Brevo SMTP kullanıcısı>
+MAIL_PASSWORD=<Brevo SMTP anahtarı>
+MAIL_FROM=noreply@gteams.team
+MAIL_SMTP_AUTH=true
+MAIL_SMTP_STARTTLS=true
+```
+
+> `MAIL_FROM` alan adı Brevo'da doğrulanmış olmalı; doğrulanmamış bir alan
+> adından gönderim reddedilir. Sunucu adı ve port değerlerini de panelden
+> teyit edin, sağlayıcılar zaman zaman değiştirir.
+
+### 6.2 Alım — Namecheap Email Forwarding
+
+Ücretsizdir ve MX kayıtları alan adı Namecheap'teyse zaten hazırdır.
+
+Namecheap → Domain List → gteams.team → **Redirect Email** →
+`admin@gteams.team` adresini mevcut bir posta kutunuza yönlendirin.
+
+Bu yalnızca admin hesabının doğrulama/kurtarma maillerini alabilmesi içindir;
+uygulamanın normal işleyişi buna bağlı değildir.
+
+### 6.3 DMARC
+
+Hiçbir sağlayıcı bunu otomatik eklemez ve eksikliği maillerin spam'e düşme
+ihtimalini artırır:
+
+```
+_dmarc.gteams.team   TXT   v=DMARC1; p=none; rua=mailto:<sizin-adresiniz>
+```
+
+SPF kaydını Brevo kendi doğrulama adımında verir; iki ayrı SPF kaydı
+oluşturmayın, tek kayıtta `include:` ile birleştirin.
+
+### Neden AWS SES değil
+
+SES ilk kurulumdu ve gönderici kimliği doğrulanmıştı, ancak **sandbox'tan
+çıkış başvurusu reddedildi**. Sandbox'ta yalnızca tek tek doğrulanmış
+adreslere mail gider, yani gerçek kullanıcı kaydı çalışmaz. İleride SES'e
+dönülürse yalnızca yukarıdaki dört değer değişir:
+
+```env
+MAIL_HOST=email-smtp.<region>.amazonaws.com
+MAIL_PORT=587
+```
 
 ## 7. Deploy
 
@@ -155,8 +215,8 @@ yedek sunucuyla birlikte kaybolacağı için bu önerilir.
 - [ ] `curl https://<DOMAIN>/actuator/health/readiness` → `"status":"UP"`
       (deploy ve konteyner sağlık kontrolü bunu kullanır; mail dahil değildir)
 - [ ] `curl https://<DOMAIN>/actuator/health` → mail bileşeni `UP`
-      (DOWN ise SES ayarları hatalı; uygulama çalışır ama mail gitmez)
-- [ ] Kayıt ol → **gerçek** doğrulama maili geliyor (SES sandbox dışında)
+      (DOWN ise SMTP ayarları hatalı; uygulama çalışır ama mail gitmez)
+- [ ] Kayıt ol → **gerçek** doğrulama maili geliyor
 - [ ] Giriş sonrası sayfa yenilendiğinde oturum korunuyor (refresh cookie)
 - [ ] Tarayıcı konsolunda `wss://` bağlantısı kuruluyor, mesaj anlık gidiyor
 - [ ] **Farklı ağlardaki iki cihaz** (mobil veri ↔ ev wifi) ses kanalında
@@ -174,7 +234,7 @@ yedek sunucuyla birlikte kaybolacağı için bu önerilir.
 3478 ve relay aralığı açık mı, `external-ip` doğru mu, `TURN_SECRET` iki
 yerde aynı mı kontrol edin.
 
-**Mailler gitmiyor** — SES sandbox'ta olabilir; `docker compose logs backend`
+**Mailler gitmiyor** — SMTP kimlik bilgileri veya gönderen adresi hatalı olabilir; `docker compose logs backend`
 içinde SMTP hatasına bakın. `/actuator/health` içindeki `mail` bileşeni durumu
 da ipucu verir. Mail arızası deploy'u engellemez: sağlık kontrolü `readiness`
 grubunu kullanır ve mail o gruba dahil değildir.
