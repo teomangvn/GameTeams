@@ -26,6 +26,10 @@ export class PeerManager {
   private readonly pendingCandidates = new Map<string, RTCIceCandidateInit[]>();
   /** Peer basina ICE restart denemesi; sonsuz donguye girilmesin. */
   private readonly recoveryAttempts = new Map<string, number>();
+  /** Su an teklif hazirlanan peer'lar; catisma tespiti icin. */
+  private readonly makingOffer = new Set<string>();
+  /** Pazarlik surerken istenen ve stable olunca yapilacak yeniden pazarliklar. */
+  private readonly pendingRenegotiation = new Set<string>();
   private localStream: MediaStream | null = null;
   /**
    * Giden video: kamera ya da ekran, ikisi birden degil. Mesh'te kisi basina
@@ -50,6 +54,11 @@ export class PeerManager {
   /** Bu taraf mi teklif etmeli? Kucuk id teklif eder. */
   private shouldInitiate(remoteUserId: string) {
     return this.options.selfUserId < remoteUserId;
+  }
+
+  /** Teklif etmeyen taraf naziktir: catismada kendi teklifini geri alir. */
+  private isPolite(remoteUserId: string) {
+    return !this.shouldInitiate(remoteUserId);
   }
 
   private createPeer(remoteUserId: string): RTCPeerConnection {
@@ -80,6 +89,14 @@ export class PeerManager {
     peer.ontrack = (event) => {
       const [stream] = event.streams;
       if (stream) this.options.onRemoteStream(remoteUserId, stream);
+    };
+
+    // Pazarlik bitip stable'a donunce bekleyen yeniden pazarligi calistir.
+    peer.onsignalingstatechange = () => {
+      if (peer.signalingState !== "stable") return;
+      if (this.pendingRenegotiation.delete(remoteUserId)) {
+        void this.sendOffer(remoteUserId, peer);
+      }
     };
 
     peer.onconnectionstatechange = () => {
@@ -116,6 +133,27 @@ export class PeerManager {
     }
   }
 
+  /**
+   * Peer kumesini sunucudaki katilimci listesiyle esitler.
+   *
+   * Baglanti kurulumu tek bir VOICE_JOINED olayina baginca, olay kaybolursa
+   * (soket yeniden baglanmasi, gecici kesinti) o cift hic kurulmuyor ve
+   * kendini toparlamiyordu -- "uc kisiden ikisi baglaniyor" tam olarak buydu.
+   * Periyodik esitleme kurulumu olaydan bagimsiz hale getirir.
+   */
+  async reconcile(userIds: string[]) {
+    const expected = new Set(userIds);
+
+    for (const userId of expected) {
+      // addPeer zaten var olan peer'da erken donuyor; tekrar cagirmak zararsiz.
+      if (!this.peers.has(userId)) await this.addPeer(userId);
+    }
+
+    for (const userId of [...this.peers.keys()]) {
+      if (!expected.has(userId)) this.removePeer(userId);
+    }
+  }
+
   async handleSignal(message: SignalMessage) {
     const from = message.fromUserId;
     let peer = this.peers.get(from);
@@ -126,6 +164,16 @@ export class PeerManager {
     }
 
     if (message.type === "offer") {
+      const collision = this.makingOffer.has(from) || peer.signalingState !== "stable";
+
+      // Kaba taraf catismada kendi teklifini korur ve geleni yok sayar; karsi
+      // taraf nazik oldugu icin kendi teklifini geri alip bizimkini kabul eder.
+      if (collision && !this.isPolite(from)) return;
+
+      if (collision) {
+        await peer.setLocalDescription({ type: "rollback" });
+      }
+
       await peer.setRemoteDescription(new RTCSessionDescription(message.payload as RTCSessionDescriptionInit));
       await this.flushCandidates(from, peer);
       const answer = await peer.createAnswer();
@@ -162,10 +210,13 @@ export class PeerManager {
     peer.onicecandidate = null;
     peer.ontrack = null;
     peer.onconnectionstatechange = null;
+    peer.onsignalingstatechange = null;
     peer.close();
     this.peers.delete(remoteUserId);
     this.pendingCandidates.delete(remoteUserId);
     this.recoveryAttempts.delete(remoteUserId);
+    this.makingOffer.delete(remoteUserId);
+    this.pendingRenegotiation.delete(remoteUserId);
     this.options.onPeerClosed(remoteUserId);
   }
 
@@ -274,18 +325,45 @@ export class PeerManager {
     this.recoveryAttempts.set(remoteUserId, attempts);
 
     try {
-      const offer = await peer.createOffer({ iceRestart: true });
-      await peer.setLocalDescription(offer);
-      this.options.sendSignal({ targetUserId: remoteUserId, type: "offer", payload: offer });
+      await this.sendOffer(remoteUserId, peer, { iceRestart: true });
     } catch {
       this.removePeer(remoteUserId);
     }
   }
 
+  /**
+   * Teklif gonderir. Pazarlik zaten suruyorsa erteler: uctaki bir teklifin
+   * uzerine ikincisini yollamak setRemoteDescription'i patlatir ve baglantiyi
+   * bozar -- kamera veya ekran acilinca sesin kesilmesinin sebebi buydu.
+   */
+  private async sendOffer(
+    userId: string,
+    peer: RTCPeerConnection,
+    options?: RTCOfferOptions,
+  ) {
+    if (peer.signalingState !== "stable") {
+      this.pendingRenegotiation.add(userId);
+      return;
+    }
+
+    this.makingOffer.add(userId);
+    try {
+      const offer = await peer.createOffer(options);
+      // await sirasinda durum degismis olabilir.
+      if (peer.signalingState !== "stable") {
+        this.pendingRenegotiation.add(userId);
+        return;
+      }
+      await peer.setLocalDescription(offer);
+      this.options.sendSignal({ targetUserId: userId, type: "offer", payload: offer });
+    }
+    finally {
+      this.makingOffer.delete(userId);
+    }
+  }
+
   private async renegotiate(userId: string, peer: RTCPeerConnection) {
-    const offer = await peer.createOffer();
-    await peer.setLocalDescription(offer);
-    this.options.sendSignal({ targetUserId: userId, type: "offer", payload: offer });
+    await this.sendOffer(userId, peer);
   }
 
   closeAll() {
