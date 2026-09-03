@@ -26,6 +26,12 @@ export function useRoomMembers(roomId: string | null) {
     queryKey: roomKeys.members(roomId ?? ""),
     queryFn: () => roomsApi.members(roomId!),
     enabled: Boolean(roomId),
+    // Cevrimici durumu zamanla degisiyor ama sunucu henuz presence olayi
+    // yayinlamiyor; periyodik tazeleme listeyi makul olcude guncel tutar.
+    // Sekmeye geri donuldugunde de tazelensin (global varsayilan kapali).
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
 }
 

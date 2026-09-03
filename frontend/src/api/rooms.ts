@@ -44,6 +44,7 @@ export interface RoomMember {
   nickname: string | null;
   role: RoomRole;
   joinedAt: string;
+  online: boolean;
 }
 
 export const roomsApi = {

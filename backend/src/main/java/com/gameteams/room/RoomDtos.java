@@ -77,6 +77,7 @@ public final class RoomDtos {
             String avatarUrl,
             String nickname,
             RoomRole role,
-            Instant joinedAt) {
+            Instant joinedAt,
+            boolean online) {
     }
 }

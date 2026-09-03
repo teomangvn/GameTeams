@@ -64,7 +64,12 @@ export function disconnectStomp() {
 
 /**
  * Hedefe abone olur, aboneligi iptal eden fonksiyonu doner.
- * Baglanti henuz kurulmadiysa kurulunca otomatik abone olunur.
+ *
+ * Abonelik baglantinin omru boyunca korunur: STOMP her yeniden baglandiginda
+ * yeniden kurulur. Yalnizca ilk baglantida abone olmak yetmiyor -- ag
+ * dalgalanmasi, uyku modu veya WiFi gecisi soketi kapattiginda eski abonelik
+ * olu baglantiya ait kaliyor ve ses olaylari, sinyalleşme, sohbet mesajlari
+ * sessizce kesiliyordu.
  */
 export function subscribe<T>(destination: string, onPayload: (payload: T) => void) {
   const stomp = getStompClient();
@@ -72,7 +77,7 @@ export function subscribe<T>(destination: string, onPayload: (payload: T) => voi
   let cancelled = false;
 
   const doSubscribe = () => {
-    if (cancelled) return;
+    if (cancelled || !stomp.connected) return;
     subscription = stomp.subscribe(destination, (frame: IMessage) => {
       try {
         onPayload(JSON.parse(frame.body) as T);
@@ -82,20 +87,24 @@ export function subscribe<T>(destination: string, onPayload: (payload: T) => voi
     });
   };
 
-  if (stomp.connected) {
-    doSubscribe();
-  } else {
-    const off = onConnectionChange((connected) => {
-      if (connected) {
-        off();
-        doSubscribe();
-      }
-    });
-  }
+  const off = onConnectionChange((connected) => {
+    if (cancelled) return;
+    // Kopan baglantinin aboneligi artik gecersiz; referansi birakip
+    // yeniden baglanmada sifirdan abone oluyoruz.
+    subscription = null;
+    if (connected) doSubscribe();
+  });
+
+  doSubscribe();
 
   return () => {
     cancelled = true;
-    subscription?.unsubscribe();
+    off();
+    try {
+      subscription?.unsubscribe();
+    } catch {
+      // Baglanti zaten kapalitysa unsubscribe hata firlatir; onemsiz.
+    }
   };
 }
 

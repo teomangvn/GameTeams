@@ -1,6 +1,7 @@
 package com.gameteams.room;
 
 import java.text.Normalizer;
+import java.util.Set;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -21,6 +22,7 @@ import com.gameteams.room.RoomDtos.MemberResponse;
 import com.gameteams.room.RoomDtos.RoomDetail;
 import com.gameteams.room.RoomDtos.RoomSummary;
 import com.gameteams.room.RoomDtos.UpdateRoomRequest;
+import com.gameteams.user.PresenceService;
 import com.gameteams.user.User;
 import com.gameteams.user.UserRepository;
 
@@ -36,12 +38,15 @@ public class RoomService {
     private final ChannelRepository channels;
     private final UserRepository users;
 
+    private final PresenceService presence;
+
     RoomService(RoomRepository rooms, RoomMemberRepository members, ChannelRepository channels,
-            UserRepository users) {
+            UserRepository users, PresenceService presence) {
         this.rooms = rooms;
         this.members = members;
         this.channels = channels;
         this.users = users;
+        this.presence = presence;
     }
 
     /**
@@ -170,7 +175,14 @@ public class RoomService {
     @Transactional(readOnly = true)
     public List<MemberResponse> listMembers(UUID roomId, UUID userId) {
         requireMember(roomId, userId);
-        return members.findAllByRoomIdWithUser(roomId).stream()
+        List<RoomMember> found = members.findAllByRoomIdWithUser(roomId);
+
+        // Tek Redis turunda hepsini sor: uye basina sorgu atmak kalabalik
+        // odalarda liste acilisini gereksiz yere yavaslatirdi.
+        Set<UUID> online = presence.onlineAmong(
+                found.stream().map(member -> member.getUser().getId()).toList());
+
+        return found.stream()
                 .map(member -> {
                     User user = member.getUser();
                     return new MemberResponse(
@@ -180,7 +192,8 @@ public class RoomService {
                             user.getAvatarUrl(),
                             member.getNickname(),
                             member.getRole(),
-                            member.getJoinedAt());
+                            member.getJoinedAt(),
+                            online.contains(user.getId()));
                 })
                 .toList();
     }

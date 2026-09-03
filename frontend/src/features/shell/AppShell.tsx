@@ -226,7 +226,11 @@ export function AppShell() {
         )}
 
         {!voiceViewOpen && membersVisible && isRoomSection && !activeConversation && membersQuery.data && (
-          <MemberList members={membersQuery.data} />
+          <MemberList
+            members={membersQuery.data}
+            onAddFriend={handleAddFriend}
+            onOpenDm={(userId) => void handleOpenDmWith(userId)}
+          />
         )}
       </div>
 
