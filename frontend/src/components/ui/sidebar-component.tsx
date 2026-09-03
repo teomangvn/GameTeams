@@ -54,6 +54,7 @@ export interface SidebarUser {
   avatarUrl?: string;
   status?: PresenceStatus;
   onLogout?: () => void;
+  onOpenProfile?: () => void;
 }
 
 export interface TwoLevelSidebarProps {
@@ -282,13 +283,24 @@ function IconRail({
             {item.icon}
           </IconNavButton>
         ))}
-        {user && (
-          <AvatarCircle
-            avatarUrl={user.avatarUrl}
-            name={user.name}
-            status={user.status}
-          />
-        )}
+        {user &&
+          (user.onOpenProfile ? (
+            <button
+              type="button"
+              onClick={user.onOpenProfile}
+              title="Profilin"
+              aria-label="Profilin"
+              className="rounded-full transition-opacity hover:opacity-80"
+            >
+              <AvatarCircle
+                avatarUrl={user.avatarUrl}
+                name={user.name}
+                status={user.status}
+              />
+            </button>
+          ) : (
+            <AvatarCircle avatarUrl={user.avatarUrl} name={user.name} status={user.status} />
+          ))}
       </div>
     </nav>
   );
@@ -476,6 +488,21 @@ function UserBar({ user }: { user: SidebarUser }) {
           aria-label="Hesap islemleri"
           className="absolute bottom-full left-1 right-1 z-20 mb-1 rounded-lg border border-neutral-800 bg-neutral-900 p-1 shadow-lg shadow-black/60"
         >
+          {user.onOpenProfile && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                user.onOpenProfile?.();
+              }}
+              className="w-full h-9 flex items-center gap-2 rounded-md px-3 text-left font-lexend text-[14px] text-neutral-200 transition-colors hover:bg-neutral-800"
+            >
+              <UserIcon size={16} className="shrink-0" />
+              Profilim
+            </button>
+          )}
+
           <button
             type="button"
             role="menuitem"
@@ -492,8 +519,16 @@ function UserBar({ user }: { user: SidebarUser }) {
       )}
 
       <div className="flex items-center gap-2 px-2 py-2">
-        <AvatarCircle avatarUrl={user.avatarUrl} name={user.name} status={user.status} />
-        <div className="font-lexend text-[14px] text-neutral-50 truncate">{user.name}</div>
+        <button
+          type="button"
+          onClick={user.onOpenProfile}
+          disabled={!user.onOpenProfile}
+          title="Profilin"
+          className="flex items-center gap-2 min-w-0 rounded-md -mx-1 px-1 py-0.5 transition-colors enabled:hover:bg-neutral-800 disabled:cursor-default"
+        >
+          <AvatarCircle avatarUrl={user.avatarUrl} name={user.name} status={user.status} />
+          <span className="font-lexend text-[14px] text-neutral-50 truncate">{user.name}</span>
+        </button>
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}

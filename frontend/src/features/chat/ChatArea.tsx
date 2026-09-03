@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Hashtag, Chat, SendAlt, Attachment, FaceSatisfied, Pin, UserMultiple } from "@carbon/icons-react";
+import { Hashtag, Chat, SendAlt, UserMultiple } from "@carbon/icons-react";
+
+import EmojiPicker from "@/features/chat/EmojiPicker";
 
 import type { Conversation } from "@/api/friends";
 import type { Channel } from "@/api/rooms";
@@ -113,6 +115,24 @@ export function ChatArea({
   const topic = conversation ? null : channel?.topic;
 
   const chat = useChat(target);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  /** Emojiyi imlecin bulundugu yere ekler, sonuna degil. */
+  const insertEmoji = (emoji: string) => {
+    const input = inputRef.current;
+    const at = input?.selectionStart ?? draft.length;
+
+    setDraft((current) => current.slice(0, at) + emoji + current.slice(at));
+
+    // Imleci eklenen emojinin arkasina tasi ve odagi geri ver.
+    requestAnimationFrame(() => {
+      if (!input) return;
+      input.focus();
+      const next = at + emoji.length;
+      input.setSelectionRange(next, next);
+    });
+  };
+
   const { messages, loading, hasMore, loadingMore, typingUsers, loadOlder, send, notifyTyping } =
     chat;
 
@@ -169,13 +189,6 @@ export function ChatArea({
           </>
         )}
         <span className="ml-auto flex items-center gap-1 shrink-0">
-          <button
-            type="button"
-            aria-label="Sabitlenmiş mesajlar"
-            className="size-8 rounded-md flex items-center justify-center text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
-          >
-            <Pin size={16} />
-          </button>
           {!isDm && (
           <button
             type="button"
@@ -257,14 +270,8 @@ export function ChatArea({
         </div>
 
         <div className="flex items-center gap-2 rounded-lg bg-neutral-900 border border-neutral-800 px-3 py-2 focus-within:border-neutral-700">
-          <button
-            type="button"
-            aria-label="Dosya ekle"
-            className="size-8 rounded-md flex items-center justify-center text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100 shrink-0"
-          >
-            <Attachment size={16} />
-          </button>
           <input
+            ref={inputRef}
             value={draft}
             onChange={(e) => {
               setDraft(e.target.value);
@@ -279,13 +286,7 @@ export function ChatArea({
             placeholder={isDm ? `${title} kişisine mesaj gönder` : `#${title} kanalına mesaj gönder`}
             className="flex-1 min-w-0 bg-transparent border-none outline-none font-lexend text-[14px] text-neutral-50 placeholder:text-neutral-500"
           />
-          <button
-            type="button"
-            aria-label="Emoji"
-            className="size-8 rounded-md flex items-center justify-center text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100 shrink-0"
-          >
-            <FaceSatisfied size={16} />
-          </button>
+          <EmojiPicker onPick={insertEmoji} />
           <button
             type="button"
             onClick={handleSend}

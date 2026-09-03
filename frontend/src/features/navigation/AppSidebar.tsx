@@ -20,6 +20,8 @@ import {
 import { Gamepad2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
+import { toast } from "@/stores/toastStore";
+
 import type { Channel, RoomDetail, RoomSummary } from "@/api/rooms";
 import {
   TwoLevelSidebar,
@@ -124,7 +126,7 @@ function buildRoomPanel(
                 id: "invite",
                 icon: <Locked size={16} className={iconClass} />,
                 label: `Davet kodu: ${room.inviteCode}`,
-                onSelect: () => void navigator.clipboard?.writeText(room.inviteCode!),
+                onSelect: () => void copyInviteCode(room.inviteCode!),
               } satisfies SidebarMenuItem,
             ]
           : []),
@@ -292,6 +294,23 @@ function buildDmPanel(
       },
     ],
   };
+}
+
+/**
+ * Davet kodunu panoya kopyalar ve sonucu bildirir.
+ *
+ * Once geri bildirim yoktu: tiklamak bir sey yapmiyormus gibi gorunuyordu.
+ * clipboard API'si yalnizca guvenli baglamda var ve izin reddedilebilir,
+ * bu yuzden basarisizlikta kod kullaniciya gosterilir ki elle kopyalayabilsin.
+ */
+async function copyInviteCode(code: string) {
+  try {
+    if (!navigator.clipboard) throw new Error("clipboard-unavailable");
+    await navigator.clipboard.writeText(code);
+    toast.success(`Davet kodu kopyalandi: ${code}`);
+  } catch {
+    toast.error(`Kopyalanamadi. Kod: ${code}`);
+  }
 }
 
 function buildSettingsPanel(
@@ -578,6 +597,7 @@ export function AppSidebar({
         avatarUrl: authUser?.avatarUrl ?? undefined,
         status: "online",
         onLogout: () => void logout(),
+        onOpenProfile: () => navigate("/profile"),
       }}
     />
   );

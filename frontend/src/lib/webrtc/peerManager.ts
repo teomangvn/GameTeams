@@ -9,6 +9,9 @@ import type { SignalMessage } from "@/api/voice";
  * basarisiz olur; bu kural onu tamamen onler.
  */
 
+/** Bu sayidan sonra peer birakilir; sonsuz yeniden deneme kaynak tuketir. */
+const MAX_RECOVERY_ATTEMPTS = 3;
+
 export interface PeerManagerOptions {
   selfUserId: string;
   iceServers: RTCIceServer[];
@@ -21,6 +24,8 @@ export class PeerManager {
   private readonly peers = new Map<string, RTCPeerConnection>();
   /** Uzak taraf henuz hazir degilken gelen adaylar burada bekletilir. */
   private readonly pendingCandidates = new Map<string, RTCIceCandidateInit[]>();
+  /** Peer basina ICE restart denemesi; sonsuz donguye girilmesin. */
+  private readonly recoveryAttempts = new Map<string, number>();
   private localStream: MediaStream | null = null;
   /**
    * Giden video: kamera ya da ekran, ikisi birden degil. Mesh'te kisi basina
@@ -78,7 +83,19 @@ export class PeerManager {
     };
 
     peer.onconnectionstatechange = () => {
-      if (["failed", "closed"].includes(peer.connectionState)) {
+      const state = peer.connectionState;
+
+      if (state === "connected") {
+        // Basarili baglanti kurtarma sayacini sifirlar.
+        this.recoveryAttempts.delete(remoteUserId);
+        return;
+      }
+
+      // "disconnected" cogu zaman kendiliginden toparlanir (kisa paket kaybi,
+      // NAT yenilenmesi); beklemeden mudahale etmek saglikli baglantiyi koparir.
+      if (state === "failed") {
+        void this.recoverConnection(remoteUserId, peer);
+      } else if (state === "closed") {
         this.removePeer(remoteUserId);
       }
     };
@@ -148,6 +165,7 @@ export class PeerManager {
     peer.close();
     this.peers.delete(remoteUserId);
     this.pendingCandidates.delete(remoteUserId);
+    this.recoveryAttempts.delete(remoteUserId);
     this.options.onPeerClosed(remoteUserId);
   }
 
@@ -233,6 +251,35 @@ export class PeerManager {
       await this.renegotiate(userId, peer);
     }
     return stream;
+  }
+
+  /**
+   * Kopan baglantiyi ICE restart ile toparlamayi dener.
+   *
+   * Onceden "failed" durumunda peer dogrudan siliniyordu ve bir daha
+   * kurulmuyordu -- WiFi gecisi veya kisa bir kesinti sesin kalici olarak
+   * gitmesine yol aciyordu. ICE restart yeni aday toplayarak baglantiyi
+   * yeniden kurar; medya akisi ve peer nesnesi korunur.
+   */
+  private async recoverConnection(remoteUserId: string, peer: RTCPeerConnection) {
+    // Yalnizca teklif eden taraf baslatir: iki taraf ayni anda ICE restart
+    // denerse glare olusur ve el sikisma yine basarisiz olur.
+    if (!this.shouldInitiate(remoteUserId)) return;
+
+    const attempts = (this.recoveryAttempts.get(remoteUserId) ?? 0) + 1;
+    if (attempts > MAX_RECOVERY_ATTEMPTS) {
+      this.removePeer(remoteUserId);
+      return;
+    }
+    this.recoveryAttempts.set(remoteUserId, attempts);
+
+    try {
+      const offer = await peer.createOffer({ iceRestart: true });
+      await peer.setLocalDescription(offer);
+      this.options.sendSignal({ targetUserId: remoteUserId, type: "offer", payload: offer });
+    } catch {
+      this.removePeer(remoteUserId);
+    }
   }
 
   private async renegotiate(userId: string, peer: RTCPeerConnection) {
