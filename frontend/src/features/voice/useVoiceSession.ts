@@ -40,6 +40,9 @@ export interface VoiceSession {
  * Uygulama kokunde tek ornek olarak yasar; kanal veya sayfa degistirmek
  * baglantiyi koparmaz.
  */
+/** Katilimci listesinin sunucuyla esitlenme araligi. */
+const RECONCILE_INTERVAL_MS = 10_000;
+
 export function useVoiceSession() {
   const selfUserId = useAuthStore((s) => s.user?.id ?? null);
   const [session, setSession] = useState<VoiceSession | null>(null);
@@ -77,6 +80,37 @@ export function useVoiceSession() {
 
   // Sekme kapanirken kanaldan duzgun cikilsin.
   useEffect(() => () => teardown(), [teardown]);
+
+  /**
+   * Katilimci listesini duzenli olarak sunucudan tazeler ve eksik peer'lari kurar.
+   *
+   * WebRTC kurulumu VOICE_JOINED olayina baglı; olay kaybolursa o cift hic
+   * baglanmiyor ve kendini toparlamiyordu. REST listesi otorite oldugu icin
+   * bu esitleme kayip olaylari da telafi eder.
+   */
+  useEffect(() => {
+    const channelId = session?.channelId;
+    if (!channelId || !selfUserId) return;
+
+    const interval = setInterval(() => {
+      void (async () => {
+        const peers = peersRef.current;
+        // Bu arada baska kanala gecilmis olabilir.
+        if (!peers || channelIdRef.current !== channelId) return;
+
+        try {
+          const current = await voiceApi.participants(channelId);
+          const others = current.filter((p) => p.userId !== selfUserId);
+          patch({ participants: others });
+          await peers.reconcile(others.map((p) => p.userId));
+        } catch {
+          // Gecici hata; bir sonraki turda tekrar denenir.
+        }
+      })();
+    }, RECONCILE_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [session?.channelId, selfUserId, patch]);
 
   /**
    * Aygit veya isleme ayari degisince canli baglantidaki mikrofonu degistir.
@@ -211,7 +245,11 @@ export function useVoiceSession() {
       // Hedefli signaling
       unsubscribeRef.current.push(
         subscribe<SignalMessage>("/user/queue/signal", (message) => {
-          void peers.handleSignal(message);
+          // Yakalanmayan bir reddi sessizce kaybolmasin: sinyalleşme hatasi
+          // sesin neden kurulmadigini anlamanin tek ipucu olabiliyor.
+          void peers.handleSignal(message).catch((error: unknown) => {
+            console.error("Sinyal islenemedi:", error);
+          });
         }),
       );
 

@@ -2,11 +2,14 @@ package com.gameteams.voice;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -27,6 +30,8 @@ public class VoiceStateService {
 
     private static final Logger log = LoggerFactory.getLogger(VoiceStateService.class);
 
+    /** Butun ses anahtarlarinin ortak oneki; acilis temizligi bunu kullanir. */
+    private static final String KEY_PREFIX = "voice:";
     /** Kanal -> (userId, katilimci JSON) */
     private static final String CHANNEL_KEY = "voice:channel:";
     /** Kullanici -> icinde bulundugu kanal. Tek kanal kurali ve temizlik icin. */
@@ -38,6 +43,37 @@ public class VoiceStateService {
     VoiceStateService(StringRedisTemplate redis, ObjectMapper objectMapper) {
         this.redis = redis;
         this.objectMapper = objectMapper;
+    }
+
+    /**
+     * Acilista Redis'teki tum ses durumunu siler.
+     *
+     * Ses oturumu WebSocket baglantisi kadar yasar; sunucu yeniden baslayinca
+     * butun baglantilar kopmus olur, dolayisiyla Redis'te kalan her kayit
+     * hayalettir. Redis kalici oldugu icin bu kayitlar kendiliginden gitmiyordu:
+     * yeni katilan biri orada olmayan kisilere WebRTC teklifi gonderiyor,
+     * cevap gelmiyor ve ses hic kurulmuyordu.
+     *
+     * Tek instance varsayimina dayanir -- STOMP broker'i zaten in-memory ve
+     * mimari tek surum uzerine kurulu. Coklu instance'a gecilirse bu temizlik
+     * diger surumlerin canli oturumlarini da silecegi icin gozden gecirilmeli.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void clearStaleStateOnStartup() {
+        try {
+            // KEYS normalde kacinilir ama burada acilista bir kez calisiyor ve
+            // ses anahtarlari en fazla birkac dusuzine; maliyeti olcusuz.
+            Set<String> stale = redis.keys(KEY_PREFIX + "*");
+            if (stale == null || stale.isEmpty()) {
+                return;
+            }
+            redis.delete(stale);
+            log.info("Acilista {} adet eski ses durumu kaydi temizlendi.", stale.size());
+        }
+        catch (RuntimeException ex) {
+            // Redis erisilemezse uygulama yine de acilsin; ses o an zaten calismaz.
+            log.warn("Eski ses durumu temizlenemedi.", ex);
+        }
     }
 
     /**
