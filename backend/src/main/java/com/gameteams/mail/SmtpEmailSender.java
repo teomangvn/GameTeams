@@ -49,6 +49,13 @@ public class SmtpEmailSender implements EmailSender {
 
     @Override
     @Async
+    public void sendEmailChangeEmail(String to, String displayName, String confirmUrl) {
+        send(to, "GameTeams e-posta adresini doğrula", "mail/email-change",
+                Map.of("displayName", displayName, "confirmUrl", confirmUrl));
+    }
+
+    @Override
+    @Async
     public void sendLoginCodeEmail(String to, String displayName, String code, String device) {
         send(to, "GameTeams giris kodun: " + code, "mail/login-code",
                 Map.of("displayName", displayName, "code", code, "device", device));

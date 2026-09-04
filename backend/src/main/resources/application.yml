@@ -42,8 +42,8 @@ spring:
     multipart:
       # AvatarStorage da ayrica sinirliyor; bu katman istegi daha govde
       # diske yazilmadan reddeder.
-      max-file-size: 2MB
-      max-request-size: 4MB
+      max-file-size: 8MB
+      max-request-size: 10MB
 
   threads:
     virtual:
@@ -95,6 +95,8 @@ gameteams:
     # Tek EC2 uzerinde calisiyoruz; nesne deposu yerine docker volume.
     avatar-dir: ${AVATAR_DIR:./uploads/avatars}
     max-avatar-bytes: ${MAX_AVATAR_BYTES:2097152}
+    attachment-dir: ${ATTACHMENT_DIR:./uploads/attachments}
+    max-attachment-bytes: ${MAX_ATTACHMENT_BYTES:8388608}
   cookie:
     # Prod'da nginx TLS sonlandirdigi icin true olmali (application-prod.yml).
     secure: ${COOKIE_SECURE:false}

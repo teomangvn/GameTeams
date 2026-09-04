@@ -41,7 +41,8 @@ public final class MessageDtos {
             UUID replyToId,
             boolean deleted,
             Instant createdAt,
-            Instant editedAt) {
+            Instant editedAt,
+            AttachmentSummary attachment) {
 
         public static MessageResponse from(Message message) {
             var author = message.getAuthor();
@@ -55,7 +56,32 @@ public final class MessageDtos {
                     message.getReplyTo() != null ? message.getReplyTo().getId() : null,
                     message.isDeleted(),
                     message.getCreatedAt(),
-                    message.getEditedAt());
+                    message.getEditedAt(),
+                    AttachmentSummary.from(message.getAttachment()));
+        }
+    }
+
+    /**
+     * Mesaj ekinin ozeti. url tahmin edilemez bir ad tasir; erisim kontrolu
+     * buna dayanir (bkz. AttachmentStorage).
+     */
+    public record AttachmentSummary(
+            UUID id,
+            String fileName,
+            String contentType,
+            long sizeBytes,
+            String url) {
+
+        static AttachmentSummary from(MessageAttachment attachment) {
+            if (attachment == null) {
+                return null;
+            }
+            return new AttachmentSummary(
+                    attachment.getId(),
+                    attachment.getFileName(),
+                    attachment.getContentType(),
+                    attachment.getSizeBytes(),
+                    "/api/attachments/" + attachment.getStoredName());
         }
     }
 

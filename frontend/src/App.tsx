@@ -6,6 +6,7 @@ import AdminPage from '@/features/admin/AdminPage'
 import AppShell from '@/features/shell/AppShell'
 import ForgotPasswordPage from '@/features/auth/ForgotPasswordPage'
 import LoginPage from '@/features/auth/LoginPage'
+import ConfirmEmailChangePage from '@/features/profile/ConfirmEmailChangePage'
 import ProfilePage from '@/features/profile/ProfilePage'
 import DeviceSettingsPage from '@/features/settings/DeviceSettingsPage'
 import RegisterPage from '@/features/auth/RegisterPage'
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/confirm-email-change" element={<ConfirmEmailChangePage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
 

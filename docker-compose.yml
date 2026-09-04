@@ -53,3 +53,4 @@ volumes:
   postgres-data:
   redis-data:
   avatar-data:
+  attachment-data:

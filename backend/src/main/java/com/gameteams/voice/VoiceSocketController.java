@@ -61,7 +61,7 @@ public class VoiceSocketController {
 
             VoiceParticipant participant = new VoiceParticipant(
                     user.getId(), user.getUsername(), user.getDisplayName(), user.getAvatarUrl(),
-                    false, false, false, false);
+                    false, false, false, false, null, null);
 
             int limit = channel.getUserLimit() != null ? channel.getUserLimit() : DEFAULT_USER_LIMIT;
             voiceState.join(channelId, participant, limit)
@@ -89,7 +89,7 @@ public class VoiceSocketController {
             StompPrincipal principal) {
         voiceState.updateState(channelId, principal.userId(),
                         request.muted(), request.deafened(), request.screenSharing(),
-                        request.cameraOn())
+                        request.cameraOn(), request.cameraTrackId(), request.screenTrackId())
                 .ifPresent(updated -> broadcast(channelId, VoiceEvent.stateChanged(channelId, updated)));
     }
 

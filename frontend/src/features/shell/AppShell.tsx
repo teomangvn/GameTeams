@@ -10,6 +10,7 @@ import RoomDialog from "@/features/rooms/RoomDialog";
 import { roomKeys, useCreateChannel, useRoom, useRoomMembers, useRooms } from "@/features/rooms/queries";
 import {
   useAcceptFriendRequest,
+  useDeclineFriendRequest,
   useConversations,
   useFriends,
   useIncomingRequests,
@@ -17,6 +18,7 @@ import {
   useSendFriendRequest,
 } from "@/features/friends/queries";
 import { useFriendEvents } from "@/features/friends/useFriendEvents";
+import { useRoomEvents } from "@/features/rooms/useRoomEvents";
 import MatchFoundDialog from "@/features/matchmaking/MatchFoundDialog";
 import PromptDialog from "@/components/ui/prompt-dialog";
 import CreateChannelDialog from "@/features/channels/CreateChannelDialog";
@@ -60,6 +62,7 @@ export function AppShell() {
   const isRoomSection = rooms.some((r) => r.id === activeSection);
   const roomQuery = useRoom(isRoomSection ? activeSection : null);
   const membersQuery = useRoomMembers(isRoomSection ? activeSection : null);
+  useRoomEvents(isRoomSection ? activeSection : null);
   const createChannel = useCreateChannel(activeSection);
 
   const friendsQuery = useFriends();
@@ -67,6 +70,7 @@ export function AppShell() {
   const conversationsQuery = useConversations();
   const openConversation = useOpenConversation();
   const acceptRequest = useAcceptFriendRequest();
+  const declineRequest = useDeclineFriendRequest();
   const sendFriendRequest = useSendFriendRequest();
 
   // Arkadaslik ve DM olaylari cache'i tazeler.
@@ -173,6 +177,7 @@ export function AppShell() {
           }}
           onOpenDmWith={(userId) => void handleOpenDmWith(userId)}
           onAcceptFriendRequest={(id) => acceptRequest.mutate(id)}
+          onDeclineFriendRequest={(id) => declineRequest.mutate(id)}
           onAddFriend={() => setPrompt("friend")}
           games={matchmaking.games}
           ticket={matchmaking.ticket}

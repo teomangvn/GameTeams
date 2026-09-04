@@ -19,4 +19,15 @@ export const usersApi = {
   },
 
   removeAvatar: () => request<AuthUser>("/api/users/me/avatar", { method: "DELETE" }),
+
+  /** Yeni adrese dogrulama baglantisi gonderir; adres henuz degismez. */
+  requestEmailChange: (payload: { newEmail: string; password: string }) =>
+    request<{ message: string }>("/api/users/me/email", { method: "POST", body: payload }),
+
+  /** Baglantidaki token'i dogrular ve adresi uygular. Kimlik gerektirmez. */
+  confirmEmailChange: (token: string) =>
+    request<{ message: string }>("/api/users/email-change/confirm", {
+      method: "POST",
+      body: { token },
+    }),
 };

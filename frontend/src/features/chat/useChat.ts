@@ -142,6 +142,21 @@ export function useChat(target: ChatTarget) {
     [targetId, targetKind],
   );
 
+  /**
+   * Dosya ekli mesaj. Yalnizca kanallarda: DM ucunda ek destegi yok ve yarim
+   * calisan bir ozellik sunmaktansa acikca engellemek dogru.
+   */
+  const sendAttachment = useCallback(
+    async (content: string, file: File) => {
+      if (!targetId || targetKind !== "channel") {
+        throw new Error("attachments-channel-only");
+      }
+      // Yayin sunucu tarafinda yapilir; STOMP ucu multipart tasiyamaz.
+      await messagesApi.sendWithAttachment(targetId, content, file);
+    },
+    [targetId, targetKind],
+  );
+
   const notifyTyping = useCallback(() => {
     // Yaziyor bildirimi su an yalnizca kanallarda var.
     if (!targetId || targetKind !== "channel") return;
@@ -160,6 +175,7 @@ export function useChat(target: ChatTarget) {
     typingUsers: Object.values(typingUsers),
     loadOlder,
     send,
+    sendAttachment,
     notifyTyping,
   };
 }

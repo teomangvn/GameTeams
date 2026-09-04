@@ -220,11 +220,10 @@ export function ProfilePage() {
               </Field>
             </div>
 
-            {/* Kullanici adi ve e-posta kimlik anahtari; degistirilmeleri ayri
-                bir dogrulama akisi gerektirir, burada yalnizca gosterilir. */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-neutral-800">
+            {/* Kullanici adi kimlik anahtari ve davet akislarinda kullaniliyor;
+                degistirilmesi ayri bir is. E-posta asagida kendi bolumunde. */}
+            <div className="pt-2 border-t border-neutral-800">
               <ReadOnlyRow label="Kullanıcı adı" value={user.username} />
-              <ReadOnlyRow label="E-posta" value={user.email} />
             </div>
 
             {error && <FormAlert tone="error">{error}</FormAlert>}
@@ -235,8 +234,91 @@ export function ProfilePage() {
             </div>
           </div>
         </form>
+
+        <EmailSection currentEmail={user.email} />
       </div>
     </div>
+  );
+}
+
+/**
+ * E-posta degistirme.
+ *
+ * Adres burada hemen degismez: yeni adrese dogrulama baglantisi gider ve ancak
+ * tiklandiginda gecerli olur. Mevcut sifre isteniyor cunku calinmis bir
+ * oturumla adresin degistirilmesi hesabi tumuyle ele gecirmeye yeterdi.
+ */
+function EmailSection({ currentEmail }: { currentEmail: string }) {
+  const [newEmail, setNewEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError(null);
+    setNotice(null);
+    setSending(true);
+    try {
+      const result = await usersApi.requestEmailChange({ newEmail, password });
+      setNotice(result.message);
+      setNewEmail("");
+      setPassword("");
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : "İstek gönderilemedi.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <form
+      onSubmit={(event) => void handleSubmit(event)}
+      className="mt-4 rounded-2xl border border-neutral-800 bg-black p-6"
+    >
+      <h2 className="font-lexend font-semibold text-[16px] text-neutral-50">E-posta adresi</h2>
+      <p className="font-lexend text-[13px] text-neutral-400 mt-1">
+        Şu anki adresin: <span className="text-neutral-200">{currentEmail}</span>
+      </p>
+
+      <div className="mt-5 flex flex-col gap-4">
+        <Field label="Yeni e-posta">
+          <TextInput
+            type="email"
+            value={newEmail}
+            maxLength={255}
+            onChange={(event) => setNewEmail(event.target.value)}
+            placeholder="yeni@eposta.com"
+            autoComplete="email"
+            required
+          />
+        </Field>
+
+        <Field label="Mevcut şifren">
+          <TextInput
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="••••••••"
+            autoComplete="current-password"
+            required
+          />
+        </Field>
+
+        {error && <FormAlert tone="error">{error}</FormAlert>}
+        {notice && !error && <FormAlert tone="success">{notice}</FormAlert>}
+
+        <span className="font-lexend text-[12px] text-neutral-500 leading-relaxed">
+          Yeni adrese bir doğrulama bağlantısı gönderilir. Bağlantıya tıklayana kadar
+          adresin değişmez.
+        </span>
+
+        <div className="pt-1">
+          <SubmitButton loading={sending}>Doğrulama bağlantısı gönder</SubmitButton>
+        </div>
+      </div>
+    </form>
   );
 }
 

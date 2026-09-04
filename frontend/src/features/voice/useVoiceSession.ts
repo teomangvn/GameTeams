@@ -28,8 +28,9 @@ export interface VoiceSession {
   participants: VoiceParticipant[];
   /** Uzak katilimcilarin ses/goruntu akislari. */
   remoteStreams: Record<string, MediaStream>;
-  /** Kendi kamera/ekran onizlemesi; izgarada kendi karesinde gosterilir. */
-  localVideo: MediaStream | null;
+  /** Kendi onizlemeleri; izgarada kendi karelerinde gosterilir. */
+  localCamera: MediaStream | null;
+  localScreen: MediaStream | null;
   /** Kendi mikrofon akisi; konusma gostergesi bunun seviyesini olcer. */
   localAudio: MediaStream | null;
 }
@@ -167,7 +168,8 @@ export function useVoiceSession() {
         cameraOn: false,
         participants: [],
         remoteStreams: {},
-        localVideo: null,
+        localCamera: null,
+        localScreen: null,
         localAudio: null,
       });
 
@@ -199,7 +201,7 @@ export function useVoiceSession() {
         iceServers,
         sendSignal: (message) => publish("/app/signal", message),
         onRemoteStream: (userId, stream) =>
-          setSession((s) => (s ? { ...s, remoteStreams: { ...s.remoteStreams, [userId]: stream } } : s)),
+          setSession((s) => (s ? { ...s, remoteStreams: mergeStream(s.remoteStreams, userId, stream) } : s)),
         onPeerClosed: (userId) =>
           setSession((s) => {
             if (!s) return s;
@@ -267,9 +269,18 @@ export function useVoiceSession() {
   const pushState = useCallback(
     (muted: boolean, deafened: boolean, screenSharing: boolean, cameraOn: boolean) => {
       const channelId = channelIdRef.current;
-      if (channelId) {
-        publish(`/app/voice.${channelId}.state`, { muted, deafened, screenSharing, cameraOn });
-      }
+      if (!channelId) return;
+
+      // Track kimlikleri PeerManager'dan okunur: alici taraf tek akistaki iki
+      // video track'ini ancak bunlarla ayirt edebiliyor.
+      publish(`/app/voice.${channelId}.state`, {
+        muted,
+        deafened,
+        screenSharing,
+        cameraOn,
+        cameraTrackId: peersRef.current?.cameraTrackId ?? null,
+        screenTrackId: peersRef.current?.screenTrackId ?? null,
+      });
     },
     [],
   );
@@ -302,14 +313,14 @@ export function useVoiceSession() {
 
     try {
       if (session.screenSharing) {
-        await peers.stopVideo();
-        patch({ screenSharing: false, localVideo: null });
+        await peers.stopScreenShare();
+        patch({ screenSharing: false, localScreen: null });
         pushState(session.muted, session.deafened, false, session.cameraOn);
       } else {
         const stream = await peers.startScreenShare();
-        // Kamera ile ekran ayni anda yayinlanmaz; PeerManager eskisini kapatir.
-        patch({ screenSharing: true, cameraOn: false, localVideo: stream });
-        pushState(session.muted, session.deafened, true, false);
+        // Kamerayi etkilemez; ikisi ayni anda yayinlanabilir.
+        patch({ screenSharing: true, localScreen: stream });
+        pushState(session.muted, session.deafened, true, session.cameraOn);
       }
     } catch (error) {
       // Kullanici paylasim penceresini kapattiysa mesaj gosterilmez.
@@ -324,16 +335,16 @@ export function useVoiceSession() {
 
     try {
       if (session.cameraOn) {
-        await peers.stopVideo();
-        patch({ cameraOn: false, localVideo: null });
+        await peers.stopCamera();
+        patch({ cameraOn: false, localCamera: null });
         pushState(session.muted, session.deafened, session.screenSharing, false);
       } else {
         if (!isSecureMediaContext()) throw new Error("insecure-context");
         const stream = await peers.startCamera(
           videoConstraints(useMediaSettingsStore.getState()),
         );
-        patch({ cameraOn: true, screenSharing: false, localVideo: stream });
-        pushState(session.muted, session.deafened, false, true);
+        patch({ cameraOn: true, localCamera: stream });
+        pushState(session.muted, session.deafened, session.screenSharing, true);
       }
     } catch (error) {
       toast.error(describeCameraError(error));
@@ -349,6 +360,37 @@ export function useVoiceSession() {
     toggleScreenShare: () => void toggleScreenShare(),
     toggleCamera: () => void toggleCamera(),
   };
+}
+
+/**
+ * Gelen akisi kullanicinin mevcut akisiyla birlestirir.
+ *
+ * Kullanici basina tek akis tutuluyor. Karsi taraf sesi ve goruntuyu ayri
+ * akislarda gonderirse dogrudan atama ses akisinin uzerine yazar ve kamera
+ * acildiginda ses kesilir. Gonderen taraf artik tek akis kullaniyor ama
+ * dagitim sirasinda eski istemciler hala ayri gonderebilir; track'leri
+ * birlestirmek bu gecis penceresini de guvenli kilar.
+ */
+function mergeStream(
+  current: Record<string, MediaStream>,
+  userId: string,
+  incoming: MediaStream,
+): Record<string, MediaStream> {
+  const existing = current[userId];
+
+  // Ayni akis ya da ilk akis: dogrudan yerlestir.
+  if (!existing || existing.id === incoming.id) {
+    return { ...current, [userId]: incoming };
+  }
+
+  const known = new Set(existing.getTracks().map((track) => track.id));
+  const added = incoming.getTracks().filter((track) => !known.has(track.id));
+  if (added.length === 0) {
+    return current;
+  }
+
+  // Yeni MediaStream: React'in degisikligi gormesi icin kimlik degismeli.
+  return { ...current, [userId]: new MediaStream([...existing.getTracks(), ...added]) };
 }
 
 /** Mikrofonun yeniden kurulmasini gerektiren ayarlarin imzasi. */

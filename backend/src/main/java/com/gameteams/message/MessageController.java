@@ -1,6 +1,18 @@
 package com.gameteams.message;
 
 import java.util.UUID;
+import com.gameteams.common.ApiException;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.CacheControl;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.FileSystemResource;
+import java.time.Duration;
+import java.nio.file.Path;
+import java.nio.file.Files;
+import java.io.IOException;
 
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -33,9 +45,13 @@ public class MessageController {
     private final MessageService messageService;
     private final SimpMessagingTemplate broker;
 
-    MessageController(MessageService messageService, SimpMessagingTemplate broker) {
+    private final AttachmentStorage attachments;
+
+    MessageController(MessageService messageService, SimpMessagingTemplate broker,
+            AttachmentStorage attachments) {
         this.messageService = messageService;
         this.broker = broker;
+        this.attachments = attachments;
     }
 
     @GetMapping("/api/channels/{channelId}/messages")
@@ -53,6 +69,53 @@ public class MessageController {
                 request.replyToId());
         broadcast(channelId, ChannelEvent.created(message));
         return message;
+    }
+
+    /**
+     * Dosya ekli mesaj. Ayri bir uc: JSON govde ile multipart ayni istekte
+     * tasinamaz ve mevcut uca dokunmak butun cagiranlari etkilerdi.
+     */
+    @PostMapping("/api/channels/{channelId}/messages/upload")
+    MessageResponse sendWithAttachment(@AuthenticationPrincipal AuthenticatedUser me,
+            @PathVariable UUID channelId,
+            @RequestParam(required = false) String content,
+            @RequestParam("file") MultipartFile file) {
+
+        MessageResponse message = messageService.send(channelId, me.id(), content, null, file);
+        broadcast(channelId, ChannelEvent.created(message));
+        return message;
+    }
+
+    /**
+     * Ek dosyasini servis eder.
+     *
+     * Kimlik gerektirmez: tarayici <img> ve <video> isteklerinde Authorization
+     * basligi gondermez. Erisim, dosya adinin tahmin edilemezligine dayanir
+     * (128 bitlik rastgele ad). Bu, sohbet iceriginin baglantiyi ele geciren
+     * birine acik olmasi demektir; kanal uyeligini zorunlu kilmak icin imzali
+     * URL veya cerez tabanli dogrulama gerekir. Simdilik bilincli bir takas.
+     */
+    @GetMapping("/api/attachments/{storedName}")
+    ResponseEntity<Resource> attachment(@PathVariable String storedName) {
+        Path path = attachments.resolveForRead(storedName);
+
+        long length;
+        try {
+            length = Files.size(path);
+        }
+        catch (IOException ex) {
+            throw ApiException.notFound("ATTACHMENT_NOT_FOUND", "Dosya bulunamadi.");
+        }
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE)
+                // Dosya adi icerikle birlikte degisir; uzun sure onbelleklenebilir.
+                .cacheControl(CacheControl.maxAge(Duration.ofDays(30)).cachePublic())
+                .contentLength(length)
+                // attachment: tarayici dosyayi sayfada calistirmak yerine indirir.
+                // Depolanan XSS'e karsi ikinci savunma hatti.
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment")
+                .body(new FileSystemResource(path));
     }
 
     @PatchMapping("/api/messages/{messageId}")

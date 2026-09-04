@@ -10,6 +10,7 @@ import java.util.UUID;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.gameteams.channel.Channel;
 import com.gameteams.channel.ChannelService;
@@ -30,13 +31,15 @@ public class MessageService {
     private final ChannelService channelService;
     private final DmService dmService;
     private final UserRepository users;
+    private final AttachmentStorage attachments;
 
     MessageService(MessageRepository messages, ChannelService channelService,
-            DmService dmService, UserRepository users) {
+            DmService dmService, UserRepository users, AttachmentStorage attachments) {
         this.messages = messages;
         this.channelService = channelService;
         this.dmService = dmService;
         this.users = users;
+        this.attachments = attachments;
     }
 
     /**
@@ -63,11 +66,28 @@ public class MessageService {
      */
     @Transactional
     public MessageResponse send(UUID channelId, UUID userId, String content, UUID replyToId) {
+        return send(channelId, userId, content, replyToId, null);
+    }
+
+    /**
+     * Mesaji, istege bagli bir dosya ekiyle gonderir.
+     *
+     * Ek varken icerik bos olabilir: bir dosya paylasmak tek basina anlamlidir
+     * ve kullaniciyi bos yere yazi yazmaya zorlamak gereksiz.
+     *
+     * Dosya once diske yazilir. Sonrasinda islem geri alinirsa diskte yetim bir
+     * dosya kalir; bunu kabul ediyoruz cunku tersi (once kayit, sonra dosya)
+     * kullaniciya var gorunen ama acilmayan bir ek birakirdi.
+     */
+    @Transactional
+    public MessageResponse send(UUID channelId, UUID userId, String content, UUID replyToId,
+            MultipartFile file) {
+
         // Erisim kontrolu kanal turune degil oda uyeligine dayanir.
         Channel channel = channelService.requireAccessibleChannel(channelId, userId);
 
-        String trimmed = content.strip();
-        if (trimmed.isEmpty()) {
+        String trimmed = content == null ? "" : content.strip();
+        if (trimmed.isEmpty() && (file == null || file.isEmpty())) {
             throw ApiException.badRequest("EMPTY_MESSAGE", "Mesaj bos olamaz.");
         }
 
@@ -84,9 +104,17 @@ public class MessageService {
         User author = users.findById(userId)
                 .orElseThrow(() -> ApiException.unauthorized("USER_NOT_FOUND", "Hesabin bulunamadi."));
 
+        Message message = new Message(channel, author, trimmed, replyTo);
+
+        if (file != null && !file.isEmpty()) {
+            AttachmentStorage.Stored stored = attachments.store(file);
+            message.attach(new MessageAttachment(message, stored.fileName(), stored.storedName(),
+                    stored.contentType(), stored.sizeBytes()));
+        }
+
         // Esleme burada, transaction icinde yapilir: entity disari sizarsa
         // lazy proxy'ler oturum kapandiktan sonra acilamaz.
-        return MessageResponse.from(messages.save(new Message(channel, author, trimmed, replyTo)));
+        return MessageResponse.from(messages.save(message));
     }
 
     @Transactional

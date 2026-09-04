@@ -118,6 +118,14 @@ public class User {
         return passwordHash;
     }
 
+    /**
+     * Yalnizca dogrulanmis bir e-posta degisikligi sonrasi cagrilir; adres
+     * kimlik anahtari oldugu icin dogrulamadan degistirilmemeli.
+     */
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
     public void setPasswordHash(String passwordHash) {
         this.passwordHash = passwordHash;
     }

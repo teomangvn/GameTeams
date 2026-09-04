@@ -9,6 +9,9 @@ export interface VoiceParticipant {
   deafened: boolean;
   screenSharing: boolean;
   cameraOn: boolean;
+  /** Tek akista iki video tasinabilir; hangisinin hangisi oldugunu bunlar soyler. */
+  cameraTrackId: string | null;
+  screenTrackId: string | null;
 }
 
 export type VoiceEvent = {

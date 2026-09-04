@@ -28,7 +28,11 @@ public record GameTeamsProperties(
      * deposu yerine bir docker volume yeterli. maxBytes hem burada hem
      * spring.servlet.multipart tarafinda sinirlanir.
      */
-    public record Uploads(String avatarDir, long maxAvatarBytes) {
+    public record Uploads(
+            String avatarDir,
+            long maxAvatarBytes,
+            String attachmentDir,
+            long maxAttachmentBytes) {
     }
 
     /**

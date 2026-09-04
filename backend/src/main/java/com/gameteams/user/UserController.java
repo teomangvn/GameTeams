@@ -24,6 +24,9 @@ import org.springframework.web.multipart.MultipartFile;
 import com.gameteams.auth.AuthDtos.UserResponse;
 import com.gameteams.auth.AuthenticatedUser;
 import com.gameteams.common.ApiException;
+import com.gameteams.auth.AuthDtos.MessageResponse;
+import com.gameteams.user.UserDtos.ChangeEmailRequest;
+import com.gameteams.user.UserDtos.ConfirmEmailChangeRequest;
 import com.gameteams.user.UserDtos.UpdateProfileRequest;
 
 import jakarta.validation.Valid;
@@ -56,6 +59,33 @@ public class UserController {
             @RequestParam("file") MultipartFile file) {
 
         return ResponseEntity.ok(userService.updateAvatar(require(principal).id(), file));
+    }
+
+    /** E-posta değişikliği başlatır; yeni adrese doğrulama bağlantısı gider. */
+    @PostMapping("/me/email")
+    ResponseEntity<MessageResponse> requestEmailChange(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @Valid @RequestBody ChangeEmailRequest request) {
+
+        userService.requestEmailChange(require(principal).id(), request.newEmail(),
+                request.password());
+        return ResponseEntity.ok(new MessageResponse(
+                "Doğrulama bağlantısı yeni adresine gönderildi. Tıklayana kadar adresin değişmez."));
+    }
+
+    /**
+     * Bağlantıdaki token'ı doğrular ve adresi uygular.
+     *
+     * Kimlik gerektirmez: kullanıcı bağlantıya e-posta istemcisinden, çoğu
+     * zaman oturumu açık olmayan bir tarayıcıda tıklar. Token'ın kendisi
+     * kanıttır ve tek kullanımlıktır.
+     */
+    @PostMapping("/email-change/confirm")
+    ResponseEntity<MessageResponse> confirmEmailChange(
+            @Valid @RequestBody ConfirmEmailChangeRequest request) {
+
+        userService.confirmEmailChange(request.token());
+        return ResponseEntity.ok(new MessageResponse("E-posta adresin güncellendi."));
     }
 
     @DeleteMapping("/me/avatar")

@@ -50,6 +50,7 @@ services:
       MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-true}
       MAIL_SMTP_STARTTLS: ${MAIL_SMTP_STARTTLS:-true}
       AVATAR_DIR: /app/uploads/avatars
+      ATTACHMENT_DIR: /app/uploads/attachments
       # Taninmayan cihazdan giriste e-postaya kod gonderir.
       # KURTARMA: mail gitmiyorsa .env'de false yapip backend'i yeniden baslat,
       # aksi halde kimse giris yapamaz.
@@ -64,6 +65,7 @@ services:
     volumes:
       # Avatarlar konteyner disinda yasamali; imaj her deploy'da degisiyor.
       - avatar-data:/app/uploads/avatars
+      - attachment-data:/app/uploads/attachments
     depends_on:
       postgres:
         condition: service_healthy
