@@ -112,9 +112,19 @@ export function subscribe<T>(destination: string, onPayload: (payload: T) => voi
   };
 }
 
+/**
+ * Mesaji yayinlar; soket kapaliysa false doner.
+ *
+ * Donus degeri cogu cagirida yok sayiliyordu ve mesajlar sessizce
+ * dusuyordu -- ses kanalina katilma istegi bu yuzden kaybolabiliyor,
+ * arayuz ise bagli gorunuyordu. En azindan konsolda iz birakiyoruz.
+ */
 export function publish(destination: string, body: unknown) {
   const stomp = getStompClient();
-  if (!stomp.connected) return false;
+  if (!stomp.connected) {
+    console.warn(`STOMP kapali, mesaj gonderilemedi: ${destination}`);
+    return false;
+  }
   stomp.publish({ destination, body: JSON.stringify(body) });
   return true;
 }

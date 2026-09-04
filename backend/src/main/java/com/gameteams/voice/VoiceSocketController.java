@@ -70,6 +70,9 @@ public class VoiceSocketController {
                     .ifPresent(previous -> broadcast(previous, VoiceEvent.left(previous, participant)));
 
             broadcast(channelId, VoiceEvent.joined(channelId, participant));
+            // Katilma/ayrilma akisi loglanmadan sinyal redlerinin sebebi
+            // anlasilamiyordu: kimin ne zaman kanalda oldugu gorunmuyordu.
+            log.info("Ses kanalina katildi: {} -> {}", user.getUsername(), channelId);
         }
         catch (RuntimeException ex) {
             sendError(principal, "VOICE_JOIN_FAILED", ex.getMessage());
@@ -81,6 +84,7 @@ public class VoiceSocketController {
         voiceState.find(channelId, principal.userId()).ifPresent(participant -> {
             voiceState.leave(channelId, principal.userId());
             broadcast(channelId, VoiceEvent.left(channelId, participant));
+            log.info("Ses kanalindan ayrildi: {} -> {}", participant.username(), channelId);
         });
     }
 
