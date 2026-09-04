@@ -40,7 +40,8 @@ class IceServerControllerTest {
                         List.of("stun:stun.l.google.com:19302"),
                         turnUrls, secret, Duration.ofHours(12)),
                 new GameTeamsProperties.Cookie(false, "Lax"),
-                new GameTeamsProperties.Uploads("./uploads/avatars", 2_097_152L),
+                new GameTeamsProperties.Uploads("./uploads/avatars", 2_097_152L,
+                        "./uploads/attachments", 8_388_608L),
                 new GameTeamsProperties.Security(false, java.time.Duration.ofMinutes(10), java.time.Duration.ofDays(90)));
 
         return new IceServerController(properties, mock(VoiceStateService.class),

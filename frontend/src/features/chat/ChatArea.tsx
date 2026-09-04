@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Hashtag, Chat, SendAlt, UserMultiple } from "@carbon/icons-react";
+import { Hashtag, Chat, SendAlt, UserMultiple, Attachment } from "@carbon/icons-react";
 
 import EmojiPicker from "@/features/chat/EmojiPicker";
 
 import type { Conversation } from "@/api/friends";
 import type { Channel } from "@/api/rooms";
-import type { ChatMessage } from "@/api/messages";
+import type { ChatMessage, MessageAttachment } from "@/api/messages";
+import { ApiError } from "@/api/client";
 import { useChat, type ChatTarget } from "@/features/chat/useChat";
 import { useAuthStore } from "@/stores/authStore";
 import { cn } from "@/lib/utils";
+import { toast } from "@/stores/toastStore";
 
 export interface ChatAreaProps {
   channel: Channel | null;
@@ -25,6 +27,64 @@ const timeFormatter = new Intl.DateTimeFormat("tr-TR", {
   hour: "2-digit",
   minute: "2-digit",
 });
+
+/**
+ * Mesaj eki. Gorseller satir icinde gosterilir, digerleri indirme baglantisi
+ * olarak: sohbette bir goruntuyu acmak icin tiklamak zorunda kalmak kotu bir
+ * deneyim, ama her dosyayi gomulu gostermeye calismak da anlamsiz.
+ */
+/** Sunucudaki 8 MB siniri; bosuna yukleme yapilmasin diye burada da kontrol. */
+const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+
+/** Sunucudaki beyaz listeyle ayni; dosya seciciyi de sinirlar. */
+const ATTACHMENT_TYPES =
+  "image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain," +
+  "application/zip,audio/mpeg,audio/ogg,video/mp4,video/webm";
+
+function AttachmentView({ attachment }: { attachment: MessageAttachment }) {
+  const isImage = attachment.contentType.startsWith("image/");
+
+  if (isImage) {
+    return (
+      <a href={attachment.url} target="_blank" rel="noreferrer" className="mt-1.5 block w-fit">
+        <img
+          src={attachment.url}
+          alt={attachment.fileName}
+          loading="lazy"
+          className="max-h-80 max-w-full rounded-lg border border-neutral-800 object-contain"
+        />
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={attachment.url}
+      target="_blank"
+      rel="noreferrer"
+      className={cn(
+        "mt-1.5 inline-flex items-center gap-2.5 rounded-lg border border-neutral-800",
+        "bg-neutral-900 px-3 py-2 transition-colors hover:bg-neutral-800",
+      )}
+    >
+      <Attachment size={16} className="shrink-0 text-neutral-400" />
+      <span className="min-w-0">
+        <span className="block font-lexend text-[13px] text-neutral-100 truncate">
+          {attachment.fileName}
+        </span>
+        <span className="block font-lexend text-[11px] text-neutral-500">
+          {formatSize(attachment.sizeBytes)}
+        </span>
+      </span>
+    </a>
+  );
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function MessageRow({
   message,
@@ -78,12 +138,19 @@ function MessageRow({
         {message.deleted ? (
           <p className="font-lexend text-[14px] text-neutral-600 italic">Bu mesaj silindi.</p>
         ) : (
-          <p className="font-lexend text-[14px] text-neutral-200 leading-relaxed break-words whitespace-pre-wrap">
-            {message.content}
-            {message.editedAt && (
-              <span className="ml-1.5 font-lexend text-[11px] text-neutral-600">(düzenlendi)</span>
+          <>
+            {message.content && (
+              <p className="font-lexend text-[14px] text-neutral-200 leading-relaxed break-words whitespace-pre-wrap">
+                {message.content}
+                {message.editedAt && (
+                  <span className="ml-1.5 font-lexend text-[11px] text-neutral-600">
+                    (düzenlendi)
+                  </span>
+                )}
+              </p>
             )}
-          </p>
+            {message.attachment && <AttachmentView attachment={message.attachment} />}
+          </>
         )}
       </div>
     </div>
@@ -133,7 +200,33 @@ export function ChatArea({
     });
   };
 
-  const { messages, loading, hasMore, loadingMore, typingUsers, loadOlder, send, notifyTyping } =
+  const attachInput = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleAttach = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // Ayni dosyayi tekrar secebilmek icin input sifirlanir.
+    event.target.value = "";
+    if (!file) return;
+
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      toast.error("Dosya en fazla 8 MB olabilir.");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      // Metin varsa dosyayla birlikte gonderilir; kutu temizlenir.
+      await sendAttachment(draft, file);
+      setDraft("");
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "Dosya gönderilemedi.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const { messages, loading, hasMore, loadingMore, typingUsers, loadOlder, send, sendAttachment, notifyTyping } =
     chat;
 
   const lastMessageId = messages.at(-1)?.id;
@@ -270,6 +363,24 @@ export function ChatArea({
         </div>
 
         <div className="flex items-center gap-2 rounded-lg bg-neutral-900 border border-neutral-800 px-3 py-2 focus-within:border-neutral-700">
+          <input
+            ref={attachInput}
+            type="file"
+            accept={ATTACHMENT_TYPES}
+            onChange={(event) => void handleAttach(event)}
+            className="hidden"
+          />
+          <button
+            type="button"
+            // Ek yalnizca kanallarda; DM ucunda destegi yok.
+            disabled={uploading || isDm}
+            onClick={() => attachInput.current?.click()}
+            aria-label={isDm ? "Özel mesajda dosya eklenemiyor" : "Dosya ekle"}
+            title={isDm ? "Özel mesajda dosya eklenemiyor" : "Dosya ekle"}
+            className="size-8 rounded-md flex items-center justify-center text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100 shrink-0 disabled:opacity-40 disabled:hover:bg-transparent"
+          >
+            <Attachment size={16} />
+          </button>
           <input
             ref={inputRef}
             value={draft}

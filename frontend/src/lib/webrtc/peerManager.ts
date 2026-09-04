@@ -12,6 +12,13 @@ import type { SignalMessage } from "@/api/voice";
 /** Bu sayidan sonra peer birakilir; sonsuz yeniden deneme kaynak tuketir. */
 const MAX_RECOVERY_ATTEMPTS = 3;
 
+type VideoKind = "camera" | "screen";
+
+interface VideoSlot {
+  track: MediaStreamTrack;
+  stream: MediaStream;
+}
+
 export interface PeerManagerOptions {
   selfUserId: string;
   iceServers: RTCIceServer[];
@@ -32,12 +39,12 @@ export class PeerManager {
   private readonly pendingRenegotiation = new Set<string>();
   private localStream: MediaStream | null = null;
   /**
-   * Giden video: kamera ya da ekran, ikisi birden degil. Mesh'te kisi basina
-   * tek video track tasiniyor ve alici taraf gelen goruntunun hangisi oldugunu
-   * ancak katilimci durumundaki bayraklardan anliyor.
+   * Giden video yuvalari. Kamera ve ekran bagimsiz: ikisi ayni anda
+   * yayinlanabilir. Alici taraf hangi track'in hangisi oldugunu katilimci
+   * durumunda tasinan track id'lerinden ayirt eder.
    */
-  private videoTrack: MediaStreamTrack | null = null;
-  private videoStream: MediaStream | null = null;
+  private camera: VideoSlot | null = null;
+  private screen: VideoSlot | null = null;
   private readonly options: PeerManagerOptions;
 
   constructor(options: PeerManagerOptions) {
@@ -49,6 +56,27 @@ export class PeerManager {
     for (const [, peer] of this.peers) {
       for (const track of stream.getTracks()) peer.addTrack(track, stream);
     }
+  }
+
+  /**
+   * Giden track'lerin iliskilendirildigi akis.
+   *
+   * Video, mikrofonla AYNI akisa baglanmali. Ayri akisla gonderilirse alici
+   * tarafta kullanici basina tek akis tutuldugu icin video akisi mikrofonunkinin
+   * yerine geciyor ve kamera acildiginda karsi taraf sesi duymayi birakiyordu.
+   * Tek akista iki track olunca ses ve goruntu birlikte calisir.
+   */
+  private outgoingStream(): MediaStream {
+    return (this.localStream ?? this.camera?.stream ?? this.screen?.stream) as MediaStream;
+  }
+
+  /** Katilimci durumunda yayinlanan track kimlikleri; alici ayirt etsin diye. */
+  get cameraTrackId(): string | null {
+    return this.camera?.track.id ?? null;
+  }
+
+  get screenTrackId(): string | null {
+    return this.screen?.track.id ?? null;
   }
 
   /** Bu taraf mi teklif etmeli? Kucuk id teklif eder. */
@@ -72,8 +100,9 @@ export class PeerManager {
 
     // Kanala sonradan giren biri de mevcut yayini gormeli; yalnizca mikrofon
     // eklenirse paylasim baslamadan once orada olmayanlar goruntuyu hic almaz.
-    if (this.videoTrack && this.videoStream) {
-      peer.addTrack(this.videoTrack, this.videoStream);
+    const outgoing = this.outgoingStream();
+    for (const slot of [this.camera, this.screen]) {
+      if (slot) peer.addTrack(slot.track, outgoing);
     }
 
     peer.onicecandidate = (event) => {
@@ -231,13 +260,21 @@ export class PeerManager {
   /** Ekran paylasimini baslatir; her peer'a track eklenir ve yeniden pazarlik olur. */
   async startScreenShare(): Promise<MediaStream> {
     const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-    return this.publishVideo(stream);
+    return this.publishVideo("screen", stream);
   }
 
-  /** Kamerayi acar. Ekran paylasimi aciksa once o kapatilir. */
+  /** Kamerayi acar. Ekran paylasimini etkilemez; ikisi birlikte yayinlanabilir. */
   async startCamera(video: MediaTrackConstraints): Promise<MediaStream> {
     const stream = await navigator.mediaDevices.getUserMedia({ video });
-    return this.publishVideo(stream);
+    return this.publishVideo("camera", stream);
+  }
+
+  async stopCamera() {
+    await this.unpublishVideo("camera");
+  }
+
+  async stopScreenShare() {
+    await this.unpublishVideo("screen");
   }
 
   /**
@@ -266,42 +303,50 @@ export class PeerManager {
     }
   }
 
-  /** Giden videoyu (kamera veya ekran) durdurur. */
+  /** Her iki video yayinini da durdurur (kanaldan cikarken). */
   async stopVideo() {
-    const track = this.videoTrack;
-    if (!track) return;
+    await this.unpublishVideo("camera");
+    await this.unpublishVideo("screen");
+  }
 
-    // Once alanlari temizle: track.onended bu cagriyi tekrar tetikleyebilir.
-    this.videoTrack = null;
-    this.videoStream = null;
-    track.onended = null;
-    track.stop();
+  private async publishVideo(kind: VideoKind, stream: MediaStream): Promise<MediaStream> {
+    // Ayni turden onceki yayin varsa once o kapatilir; digerine dokunulmaz.
+    await this.unpublishVideo(kind);
+
+    const [track] = stream.getVideoTracks();
+    const slot: VideoSlot = { track, stream };
+    if (kind === "camera") this.camera = slot;
+    else this.screen = slot;
+
+    // Kullanici tarayicinin kendi "paylasimi durdur" butonuna basarsa.
+    track.onended = () => void this.unpublishVideo(kind);
+
+    const outgoing = this.outgoingStream();
+    for (const [userId, peer] of this.peers) {
+      peer.addTrack(track, outgoing);
+      await this.renegotiate(userId, peer);
+    }
+    return stream;
+  }
+
+  private async unpublishVideo(kind: VideoKind) {
+    const slot = kind === "camera" ? this.camera : this.screen;
+    if (!slot) return;
+
+    // Once yuvayi bosalt: track.onended bu cagriyi tekrar tetikleyebilir.
+    if (kind === "camera") this.camera = null;
+    else this.screen = null;
+
+    slot.track.onended = null;
+    slot.track.stop();
 
     for (const [userId, peer] of this.peers) {
-      const sender = peer.getSenders().find((s) => s.track === track);
+      const sender = peer.getSenders().find((s) => s.track === slot.track);
       if (sender) {
         peer.removeTrack(sender);
         await this.renegotiate(userId, peer);
       }
     }
-  }
-
-  private async publishVideo(stream: MediaStream): Promise<MediaStream> {
-    // Kamera ve ekran ayni anda yayinlanmaz; yenisi eskisinin yerini alir.
-    await this.stopVideo();
-
-    const [track] = stream.getVideoTracks();
-    this.videoTrack = track;
-    this.videoStream = stream;
-
-    // Kullanici tarayicinin kendi "paylasimi durdur" butonuna basarsa.
-    track.onended = () => void this.stopVideo();
-
-    for (const [userId, peer] of this.peers) {
-      peer.addTrack(track, stream);
-      await this.renegotiate(userId, peer);
-    }
-    return stream;
   }
 
   /**

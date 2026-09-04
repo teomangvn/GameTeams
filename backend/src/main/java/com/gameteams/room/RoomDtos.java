@@ -70,6 +70,19 @@ public final class RoomDtos {
             Instant createdAt) {
     }
 
+    /**
+     * /topic/room.{roomId} uzerinden yayinlanan olaylar.
+     *
+     * Su an yalnizca presence: uye listesindeki cevrimici gostergesi eskiden
+     * periyodik yoklamayla tazeleniyordu, artik degisiklik aninda yayiliyor.
+     */
+    public record RoomEvent(String type, UUID userId, boolean online) {
+
+        public static RoomEvent presence(UUID userId, boolean online) {
+            return new RoomEvent("PRESENCE_UPDATE", userId, online);
+        }
+    }
+
     public record MemberResponse(
             UUID userId,
             String username,

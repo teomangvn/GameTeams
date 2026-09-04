@@ -17,22 +17,26 @@ public final class VoiceDtos {
             boolean muted,
             boolean deafened,
             boolean screenSharing,
-            boolean cameraOn) {
+            boolean cameraOn,
+            String cameraTrackId,
+            String screenTrackId) {
 
         public VoiceParticipant withState(boolean muted, boolean deafened,
-                boolean screenSharing, boolean cameraOn) {
+                boolean screenSharing, boolean cameraOn,
+                String cameraTrackId, String screenTrackId) {
             return new VoiceParticipant(userId, username, displayName, avatarUrl,
-                    muted, deafened, screenSharing, cameraOn);
+                    muted, deafened, screenSharing, cameraOn, cameraTrackId, screenTrackId);
         }
     }
 
     /**
-     * cameraOn ve screenSharing ayni anda true olmaz: mesh'te kisi basina tek
-     * video track tasiniyor, alici taraf da gelen goruntunun kamera mi ekran mi
-     * oldugunu ancak bu bayraklardan anliyor.
+     * Kamera ve ekran ayni anda acik olabilir. Ikisi de tek bir akista
+     * tasindigi icin alici taraf hangi video track'in hangisi oldugunu
+     * ancak buradaki track kimliklerinden ayirt edebilir.
      */
     public record VoiceStateRequest(boolean muted, boolean deafened,
-            boolean screenSharing, boolean cameraOn) {
+            boolean screenSharing, boolean cameraOn,
+            String cameraTrackId, String screenTrackId) {
     }
 
     /** /topic/voice.{channelId} uzerinden yayinlanan olaylar. */

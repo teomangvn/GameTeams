@@ -19,6 +19,16 @@ export interface ChatMessage {
   deleted: boolean;
   createdAt: string;
   editedAt: string | null;
+  attachment: MessageAttachment | null;
+}
+
+export interface MessageAttachment {
+  id: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  /** Tahmin edilemez ad tasir; erisim kontrolu buna dayanir. */
+  url: string;
 }
 
 export interface MessagePage {
@@ -44,6 +54,17 @@ export const messagesApi = {
       method: "POST",
       body: { content, replyToId },
     }),
+
+  /** Dosya ekli mesaj. JSON govde ile multipart ayni istekte tasinamaz. */
+  sendWithAttachment: (channelId: string, content: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (content.trim()) form.append("content", content.trim());
+    return request<ChatMessage>(`/api/channels/${channelId}/messages/upload`, {
+      method: "POST",
+      body: form,
+    });
+  },
 
   edit: (messageId: string, content: string) =>
     request<ChatMessage>(`/api/messages/${messageId}`, { method: "PATCH", body: { content } }),

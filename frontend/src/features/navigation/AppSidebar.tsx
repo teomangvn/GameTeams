@@ -13,6 +13,8 @@ import {
   Video,
   MicrophoneOff,
   Headphones,
+  Checkmark,
+  Close,
   UserFollow,
   Trophy,
   Time,
@@ -220,6 +222,7 @@ function buildFriendsPanel(
   onAddFriend: () => void,
   onOpenDm: (userId: string) => void,
   onAccept: (friendshipId: string) => void,
+  onDecline: (friendshipId: string) => void,
 ): SidebarPanel {
   const online = friends.filter((f) => f.online);
   const offline = friends.filter((f) => !f.online);
@@ -230,11 +233,26 @@ function buildFriendsPanel(
   if (incoming.length > 0) {
     sections.push({
       title: `İstekler — ${incoming.length}`,
+      // Acilir oge: kabul ve red ayri secenekler. Onceden yalnizca kabul
+      // vardi ve istegi reddetmenin arayuzde hicbir karsiligi yoktu.
       items: incoming.map<SidebarMenuItem>((r) => ({
         id: r.friendshipId,
         icon: <UserFollow size={16} className="text-amber-400" />,
-        label: `${r.displayName} · kabul et`,
-        onSelect: () => onAccept(r.friendshipId),
+        label: r.displayName,
+        children: [
+          {
+            id: `${r.friendshipId}-accept`,
+            icon: <Checkmark size={16} className="text-emerald-400" />,
+            label: "Kabul et",
+            onSelect: () => onAccept(r.friendshipId),
+          },
+          {
+            id: `${r.friendshipId}-decline`,
+            icon: <Close size={16} className="text-red-400" />,
+            label: "Reddet",
+            onSelect: () => onDecline(r.friendshipId),
+          },
+        ],
       })),
     });
   }
@@ -387,6 +405,7 @@ export interface AppSidebarProps {
   onSelectConversation: (conversation: Conversation) => void;
   onOpenDmWith: (userId: string) => void;
   onAcceptFriendRequest: (friendshipId: string) => void;
+  onDeclineFriendRequest: (friendshipId: string) => void;
   onAddFriend: () => void;
   games: Game[];
   ticket: Ticket | null;
@@ -418,6 +437,7 @@ export function AppSidebar({
   onSelectConversation,
   onOpenDmWith,
   onAcceptFriendRequest,
+  onDeclineFriendRequest,
   onAddFriend,
   activeSection,
   onSectionChange,
@@ -497,6 +517,7 @@ export function AppSidebar({
           onAddFriend,
           onOpenDmWith,
           onAcceptFriendRequest,
+          onDeclineFriendRequest,
         );
       case "dms":
         return buildDmPanel(conversations, activeConversationId, onSelectConversation);
@@ -532,6 +553,7 @@ export function AppSidebar({
     onSelectConversation,
     onOpenDmWith,
     onAcceptFriendRequest,
+    onDeclineFriendRequest,
     onAddFriend,
     games,
     ticket,

@@ -26,10 +26,9 @@ export function useRoomMembers(roomId: string | null) {
     queryKey: roomKeys.members(roomId ?? ""),
     queryFn: () => roomsApi.members(roomId!),
     enabled: Boolean(roomId),
-    // Cevrimici durumu zamanla degisiyor ama sunucu henuz presence olayi
-    // yayinlamiyor; periyodik tazeleme listeyi makul olcude guncel tutar.
-    // Sekmeye geri donuldugunde de tazelensin (global varsayilan kapali).
-    refetchInterval: 30_000,
+    // Cevrimici durumu artik /topic/room.{id} uzerinden aninda geliyor
+    // (useRoomEvents), periyodik yoklamaya gerek yok. Sekmeye donusta yine
+    // tazelensin: soket kapaliyken kacirilan degisiklikler telafi edilir.
     refetchOnWindowFocus: true,
     staleTime: 0,
   });

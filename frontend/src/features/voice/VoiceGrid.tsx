@@ -43,32 +43,10 @@ export function VoiceGrid({
   const speaking = useSpeakingDetection(audioStreams);
 
   const tiles: TileData[] = [
-    {
-      key: "self",
-      name: self?.displayName ?? "Sen",
-      avatarUrl: self?.avatarUrl ?? null,
-      muted: session.muted,
-      deafened: session.deafened,
-      screenSharing: session.screenSharing,
-      cameraOn: session.cameraOn,
-      stream: session.localVideo,
-      isSelf: true,
-      // Susturulmusken cerceve yanmasin: track devre disi oldugu icin analyser
-      // zaten sessizlik gorur, ama deafened durumunda da acikca kapatiyoruz.
-      speaking: speaking.has("self") && !session.muted,
-    },
-    ...session.participants.map((participant) => ({
-      key: participant.userId,
-      name: participant.displayName,
-      avatarUrl: participant.avatarUrl,
-      muted: participant.muted,
-      deafened: participant.deafened,
-      screenSharing: participant.screenSharing,
-      cameraOn: participant.cameraOn,
-      stream: streamWithVideo(session, participant),
-      isSelf: false,
-      speaking: speaking.has(participant.userId) && !participant.muted,
-    })),
+    ...tilesForSelf(session, self?.displayName ?? "Sen", self?.avatarUrl ?? null, speaking),
+    ...session.participants.flatMap((participant) =>
+      tilesForParticipant(session, participant, speaking),
+    ),
   ];
 
   return (
@@ -123,11 +101,105 @@ interface TileData {
   avatarUrl: string | null;
   muted: boolean;
   deafened: boolean;
-  screenSharing: boolean;
+  /** Bu kare ekran paylasimini mi gosteriyor (kenarligi ayirt eder). */
+  isScreen: boolean;
   cameraOn: boolean;
-  stream: MediaStream | null;
+  screenSharing: boolean;
+  /** Gosterilecek video track'i; yoksa profil fotografi gosterilir. */
+  track: MediaStreamTrack | null;
   isSelf: boolean;
   speaking: boolean;
+  mirrored: boolean;
+}
+
+/**
+ * Kendi karelerin. Kamera ve ekran bagimsiz oldugu icin ikisi de aciksa iki
+ * ayri kare olusur; hicbiri yoksa profil fotografli tek kare.
+ */
+function tilesForSelf(
+  session: VoiceSession,
+  name: string,
+  avatarUrl: string | null,
+  speaking: Set<string>,
+): TileData[] {
+  // Susturulmusken cerceve yanmasin: track devre disi oldugu icin analyser
+  // zaten sessizlik gorur, ama acikca da kapatiyoruz.
+  const base = {
+    name,
+    avatarUrl,
+    muted: session.muted,
+    deafened: session.deafened,
+    cameraOn: session.cameraOn,
+    screenSharing: session.screenSharing,
+    isSelf: true,
+    speaking: speaking.has("self") && !session.muted,
+  };
+
+  const tiles: TileData[] = [];
+  const camera = session.localCamera?.getVideoTracks()[0] ?? null;
+  const screen = session.localScreen?.getVideoTracks()[0] ?? null;
+
+  if (camera) {
+    // Kendi kameranda ayna goruntusu beklenir; ekran paylasiminda beklenmez.
+    tiles.push({ ...base, key: "self-camera", isScreen: false, track: camera, mirrored: true });
+  }
+  if (screen) {
+    tiles.push({ ...base, key: "self-screen", isScreen: true, track: screen, mirrored: false });
+  }
+  if (tiles.length === 0) {
+    tiles.push({ ...base, key: "self", isScreen: false, track: null, mirrored: false });
+  }
+  return tiles;
+}
+
+/** Uzak katilimcinin kareleri; ayni mantik, track'ler kimlikle eslesir. */
+function tilesForParticipant(
+  session: VoiceSession,
+  participant: VoiceParticipant,
+  speaking: Set<string>,
+): TileData[] {
+  const base = {
+    name: participant.displayName,
+    avatarUrl: participant.avatarUrl,
+    muted: participant.muted,
+    deafened: participant.deafened,
+    cameraOn: participant.cameraOn,
+    screenSharing: participant.screenSharing,
+    isSelf: false,
+    speaking: speaking.has(participant.userId) && !participant.muted,
+    mirrored: false,
+  };
+
+  const stream = session.remoteStreams[participant.userId];
+  const tiles: TileData[] = [];
+
+  const camera = findTrack(stream, participant.cameraTrackId);
+  const screen = findTrack(stream, participant.screenTrackId);
+
+  if (camera) {
+    tiles.push({ ...base, key: `${participant.userId}-camera`, isScreen: false, track: camera });
+  }
+  if (screen) {
+    tiles.push({ ...base, key: `${participant.userId}-screen`, isScreen: true, track: screen });
+  }
+  if (tiles.length === 0) {
+    tiles.push({ ...base, key: participant.userId, isScreen: false, track: null });
+  }
+  return tiles;
+}
+
+/**
+ * Akistaki video track'ini kimligine gore bulur.
+ *
+ * Ses ve iki video tek akista tasiniyor; hangisinin kamera hangisinin ekran
+ * oldugunu yalnizca katilimci durumundaki kimlikler soyluyor.
+ */
+function findTrack(
+  stream: MediaStream | undefined,
+  trackId: string | null,
+): MediaStreamTrack | null {
+  if (!stream || !trackId) return null;
+  return stream.getVideoTracks().find((track) => track.id === trackId) ?? null;
 }
 
 /**
@@ -141,35 +213,21 @@ function columnsFor(count: number): number {
   return 4;
 }
 
-/** Katilimcinin video tasiyan akisi; yoksa null (profil fotografi gosterilir). */
-function streamWithVideo(session: VoiceSession, participant: VoiceParticipant): MediaStream | null {
-  if (!participant.cameraOn && !participant.screenSharing) return null;
-  const stream = session.remoteStreams[participant.userId];
-  return stream && stream.getVideoTracks().length > 0 ? stream : null;
-}
-
 function Tile({ tile }: { tile: TileData }) {
-  const showVideo = Boolean(tile.stream) && (tile.cameraOn || tile.screenSharing);
-
   return (
     <figure
       className={cn(
         "relative min-h-40 rounded-xl overflow-hidden bg-black border flex items-center justify-center",
         "transition-shadow duration-150",
-        tile.screenSharing ? "border-emerald-500/40" : "border-neutral-800",
+        // Ekran karesi ayirt edilsin: ayni kisinin iki karesi yan yana durabilir.
+        tile.isScreen ? "border-emerald-500/40" : "border-neutral-800",
         // Konusan kisinin cercevesi: ring, border'in yerini almaz ustune biner,
-        // boylece ekran paylasimi rengi kaybolmaz ve kare ziplamaz.
+        // boylece ekran rengi kaybolmaz ve kare ziplamaz.
         tile.speaking && "ring-2 ring-emerald-400 ring-offset-0",
       )}
     >
-      {showVideo ? (
-        <TileVideo
-          stream={tile.stream as MediaStream}
-          // Kendi kameranda ayna goruntusu beklenir; ekran paylasiminda beklenmez.
-          mirrored={tile.isSelf && tile.cameraOn}
-          // Kendi sesini geri duymamak icin daima sessiz. Uzak sesler
-          // VoiceStage'deki <audio> uzerinden calinir; burada iki kez calmasin.
-        />
+      {tile.track ? (
+        <TileVideo track={tile.track} mirrored={tile.mirrored} />
       ) : (
         <Avatar name={tile.name} avatarUrl={tile.avatarUrl} />
       )}
@@ -178,6 +236,7 @@ function Tile({ tile }: { tile: TileData }) {
         <span className="font-lexend text-[13px] text-neutral-50 truncate">
           {tile.name}
           {tile.isSelf && <span className="text-neutral-400"> (sen)</span>}
+          {tile.isScreen && <span className="text-emerald-400"> · ekran</span>}
         </span>
 
         <span className="ml-auto flex items-center gap-1.5 shrink-0 text-neutral-300">
@@ -221,15 +280,26 @@ function initials(name: string): string {
   return (words[0][0] + words[1][0]).toUpperCase();
 }
 
-function TileVideo({ stream, mirrored }: { stream: MediaStream; mirrored: boolean }) {
+/**
+ * Tek bir video track'ini gosterir.
+ *
+ * Akis degil track aliyor: ses ve iki video tek akista tasindigi icin her kare
+ * yalnizca kendi track'ini icermeli. Akis burada kuruluyor ve track kimligine
+ * baglaniyor -- her render'da yeni MediaStream uretmek srcObject'i bosuna
+ * yeniden atardi.
+ *
+ * Daima sessiz: uzak sesler VoiceStage'deki <audio> uzerinden calinir, burada
+ * ikinci kez calmamali.
+ */
+function TileVideo({ track, mirrored }: { track: MediaStreamTrack; mirrored: boolean }) {
   const ref = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
-    element.srcObject = stream;
+    element.srcObject = new MediaStream([track]);
     void element.play().catch(() => undefined);
-  }, [stream]);
+  }, [track]);
 
   return (
     <video

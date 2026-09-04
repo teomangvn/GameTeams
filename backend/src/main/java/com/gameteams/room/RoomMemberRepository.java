@@ -26,4 +26,14 @@ public interface RoomMemberRepository extends JpaRepository<RoomMember, UUID> {
     @Query("select m from RoomMember m join fetch m.room r join fetch r.owner "
             + "where m.user = :user order by m.joinedAt")
     List<RoomMember> findAllByUserWithRoom(@Param("user") User user);
+
+    /**
+     * Kullanicinin uyesi oldugu odalarin id'leri.
+     *
+     * Presence yayini icin entity yuklemek gereksiz: WebSocket olay
+     * dinleyicisinde her baglanti/kopmada tam RoomMember grafigini cekmek
+     * bosa maliyet.
+     */
+    @Query("select m.room.id from RoomMember m where m.user.id = :userId")
+    List<UUID> findRoomIdsByUserId(@Param("userId") UUID userId);
 }

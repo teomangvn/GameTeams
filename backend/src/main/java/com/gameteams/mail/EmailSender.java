@@ -8,6 +8,9 @@ public interface EmailSender {
 
     void sendVerificationEmail(String to, String displayName, String verifyUrl);
 
+    /** Yeni adrese gonderilen dogrulama baglantisi. */
+    void sendEmailChangeEmail(String to, String displayName, String confirmUrl);
+
     /** Taninmayan cihazdan giris denemesi icin tek kullanimlik kod. */
     void sendLoginCodeEmail(String to, String displayName, String code, String device);
 

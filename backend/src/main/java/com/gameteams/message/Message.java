@@ -8,6 +8,8 @@ import com.gameteams.dm.DmConversation;
 import com.gameteams.user.User;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -56,6 +58,13 @@ public class Message {
 
     @Column(name = "deleted_at")
     private Instant deletedAt;
+
+    /**
+     * Mesaja ilistirilen dosya. Tek ek yeterli: sohbette birden fazla dosyayi
+     * tek mesajda gondermek nadir ve arayuzu belirgin sekilde karmasiklastirir.
+     */
+    @OneToOne(mappedBy = "message", fetch = FetchType.LAZY, cascade = CascadeType.ALL)
+    private MessageAttachment attachment;
 
     protected Message() {
     }
@@ -116,6 +125,14 @@ public class Message {
     public void softDelete() {
         this.deletedAt = Instant.now();
         this.content = "";
+    }
+
+    public MessageAttachment getAttachment() {
+        return attachment;
+    }
+
+    void attach(MessageAttachment attachment) {
+        this.attachment = attachment;
     }
 
     public boolean isDeleted() {

@@ -56,6 +56,12 @@ public class SecurityConfig {
                         // istekte Authorization basligi gondermez. Dosya adlari
                         // rastgele UUID; sirali tahmin edilemez, gizli veri de yok.
                         .requestMatchers(HttpMethod.GET, "/api/users/avatars/**").permitAll()
+                        // Ek dosyalari <img>/<video> ile cekiliyor; ad tahmin
+                        // edilemez. Bkz. MessageController#attachment.
+                        .requestMatchers(HttpMethod.GET, "/api/attachments/**").permitAll()
+                        // E-posta degisikligi onayi: kullanici baglantiya cogu zaman
+                        // oturumu acik olmayan bir tarayicida tiklar. Token kanittir.
+                        .requestMatchers(HttpMethod.POST, "/api/users/email-change/confirm").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 // Varsayılan davranış kimliksiz istekte 403 döner; REST istemcisinin
