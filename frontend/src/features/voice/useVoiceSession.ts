@@ -45,36 +45,51 @@ export interface VoiceSession {
 const RECONCILE_INTERVAL_MS = 10_000;
 
 /** Katilimin islendigini dogrulamak icin deneme sayisi ve araligi. */
-const REGISTRATION_ATTEMPTS = 10;
-const REGISTRATION_DELAY_MS = 150;
+const REGISTRATION_ATTEMPTS = 12;
+const REGISTRATION_DELAY_MS = 250;
+
+/** Kanala katilma istegi sunucuya ulasmadi ve kayit dogrulanamadi. */
+export class JoinFailedError extends Error {
+  constructor() {
+    super("voice-join-failed");
+    this.name = "JoinFailedError";
+  }
+}
 
 /**
- * Sunucu bizi kanala ekleyene kadar bekler ve diger katilimcilari dondurur.
+ * Kanala katilir ve sunucunun kaydi isledigini dogrular.
  *
- * join bir STOMP yayini: onay dondurmuyor. Katilimci listesinde kendimizi
- * gormek, kaydin islendigini kanitlayan tek dogrudan sinyal. Bu olmadan
- * gonderilen teklifler sunucu tarafindan reddedilir.
+ * join bir STOMP yayini: onay dondurmuyor ve soket kapaliysa publish sessizce
+ * false donuyor. Katilimci listesinde kendimizi gormek, kaydin gercekten
+ * islendigini kanitlayan tek dogrudan sinyal.
+ *
+ * Dogrulanamazsa HATA firlatilir. Onceden sessizce devam ediliyordu: arayuz
+ * "ses baglandi" gosterirken sunucu bizi kanalda saymiyor, gonderdigimiz her
+ * teklif ve ICE adayi reddediliyordu. Kullaniciya calisiyormus gibi gorunen
+ * bir baglanti, acikca basarisiz olandan cok daha kotu.
  */
-async function waitForRegistration(
+async function joinAndConfirm(
   channelId: string,
   selfUserId: string,
 ): Promise<VoiceParticipant[]> {
-  let latest: VoiceParticipant[] = [];
-
   for (let attempt = 0; attempt < REGISTRATION_ATTEMPTS; attempt++) {
+    // Her turda yeniden yayinla: ilk denemede soket henuz baglanmamis olabilir
+    // ve publish sessizce dusurulur.
+    publish(`/app/voice.${channelId}.join`, {});
+
+    await new Promise((resolve) => setTimeout(resolve, REGISTRATION_DELAY_MS));
+
     try {
-      latest = await voiceApi.participants(channelId);
+      const latest = await voiceApi.participants(channelId);
       if (latest.some((p) => p.userId === selfUserId)) {
         return latest.filter((p) => p.userId !== selfUserId);
       }
     } catch {
-      // Gecici hata; asagida tekrar denenir.
+      // Gecici hata; bir sonraki turda tekrar denenir.
     }
-    await new Promise((resolve) => setTimeout(resolve, REGISTRATION_DELAY_MS));
   }
 
-  // Dogrulanamadi: yine de devam et, periyodik esitleme telafi eder.
-  return latest.filter((p) => p.userId !== selfUserId);
+  throw new JoinFailedError();
 }
 
 export function useVoiceSession() {
@@ -156,9 +171,14 @@ export function useVoiceSession() {
       void (async () => {
         // Karsi taraf peer'i zaten kapatmis olur; tek tarafli kalanlari temizle.
         peers.closePeers();
-        publish(`/app/voice.${channelId}.join`, {});
 
-        const others = await waitForRegistration(channelId, selfUserId);
+        let others: VoiceParticipant[];
+        try {
+          others = await joinAndConfirm(channelId, selfUserId);
+        } catch {
+          toast.error("Ses kanalina yeniden baglanilamadi.");
+          return;
+        }
         if (channelIdRef.current !== channelId) return;
 
         patch({ participants: others });
@@ -363,11 +383,17 @@ export function useVoiceSession() {
       // gondermek, teklifi bizim vermemiz gereken (kucuk UUID) her cifti
       // sessizce kurulmamis birakiyordu -- baglanti UUID sirasina gore rastgele
       // calisiyor gibi gorunuyordu.
-      publish(`/app/voice.${channelId}.join`, {});
-
-      // Kaydin islendigini katilimci listesinden dogrula: liste sunucunun
-      // durumunu birebir yansitir, olay teslimatina bagli degildir.
-      const others = await waitForRegistration(channelId, selfUserId);
+      let others: VoiceParticipant[];
+      try {
+        others = await joinAndConfirm(channelId, selfUserId);
+      } catch {
+        // Kayit dogrulanamadi: sahte bir "bagli" durumu birakmak yerine
+        // oturumu kapat ve kullaniciya soyle.
+        teardown();
+        setSession(null);
+        toast.error("Ses kanalina baglanilamadi. Baglantini kontrol edip tekrar dene.");
+        return;
+      }
       if (channelIdRef.current !== channelId) return;
 
       patch({ participants: others });
