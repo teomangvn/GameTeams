@@ -105,7 +105,10 @@ public class VoiceSocketController {
         var targetChannel = voiceState.currentChannelOf(message.targetUserId());
 
         if (senderChannel.isEmpty() || !senderChannel.equals(targetChannel)) {
-            log.debug("Signaling reddedildi: {} -> {} ayni kanalda degil",
+            // warn: bu red sessizce olursa ses hic kurulmaz ve sebebi
+            // hicbir yerde gorunmez. Istemci hatasi olsa bile operatorun
+            // bunu loglarda gormesi gerekir.
+            log.warn("Signaling reddedildi: {} -> {} ayni kanalda degil",
                     senderId, message.targetUserId());
             sendError(principal, "SIGNAL_REJECTED", "Hedef kullanici ayni ses kanalinda degil.");
             return;
