@@ -24,9 +24,13 @@ function notify(connected: boolean) {
   for (const listener of connectionListeners) listener(connected);
 }
 
-export function onConnectionChange(listener: ConnectionListener) {
+/** Dinleyiciyi kaydeder; donen fonksiyon aboneligi kaldirir. */
+export function onConnectionChange(listener: ConnectionListener): () => void {
   connectionListeners.add(listener);
-  return () => connectionListeners.delete(listener);
+  // Set.delete boolean doner; React efekt temizleyicisi void bekler.
+  return () => {
+    connectionListeners.delete(listener);
+  };
 }
 
 export function getStompClient(): Client {

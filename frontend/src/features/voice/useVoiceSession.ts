@@ -8,7 +8,7 @@ import {
   describeScreenShareError,
   isSecureMediaContext,
 } from "@/features/voice/mediaErrors";
-import { publish, subscribe } from "@/lib/stompClient";
+import { onConnectionChange, publish, subscribe } from "@/lib/stompClient";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import {
@@ -44,6 +44,39 @@ export interface VoiceSession {
 /** Katilimci listesinin sunucuyla esitlenme araligi. */
 const RECONCILE_INTERVAL_MS = 10_000;
 
+/** Katilimin islendigini dogrulamak icin deneme sayisi ve araligi. */
+const REGISTRATION_ATTEMPTS = 10;
+const REGISTRATION_DELAY_MS = 150;
+
+/**
+ * Sunucu bizi kanala ekleyene kadar bekler ve diger katilimcilari dondurur.
+ *
+ * join bir STOMP yayini: onay dondurmuyor. Katilimci listesinde kendimizi
+ * gormek, kaydin islendigini kanitlayan tek dogrudan sinyal. Bu olmadan
+ * gonderilen teklifler sunucu tarafindan reddedilir.
+ */
+async function waitForRegistration(
+  channelId: string,
+  selfUserId: string,
+): Promise<VoiceParticipant[]> {
+  let latest: VoiceParticipant[] = [];
+
+  for (let attempt = 0; attempt < REGISTRATION_ATTEMPTS; attempt++) {
+    try {
+      latest = await voiceApi.participants(channelId);
+      if (latest.some((p) => p.userId === selfUserId)) {
+        return latest.filter((p) => p.userId !== selfUserId);
+      }
+    } catch {
+      // Gecici hata; asagida tekrar denenir.
+    }
+    await new Promise((resolve) => setTimeout(resolve, REGISTRATION_DELAY_MS));
+  }
+
+  // Dogrulanamadi: yine de devam et, periyodik esitleme telafi eder.
+  return latest.filter((p) => p.userId !== selfUserId);
+}
+
 export function useVoiceSession() {
   const selfUserId = useAuthStore((s) => s.user?.id ?? null);
   const [session, setSession] = useState<VoiceSession | null>(null);
@@ -53,6 +86,17 @@ export function useVoiceSession() {
   const unsubscribeRef = useRef<Array<() => void>>([]);
   /** Mikrofonun hangi ayarlarla kuruldugu; gereksiz yeniden kurmayi onler. */
   const appliedAudioRef = useRef<string | null>(null);
+  /** Efektlerin guncel oturuma erisebilmesi icin; state'e bagimlilik kurmadan. */
+  const sessionRef = useRef<VoiceSession | null>(null);
+  /** Baglanti bir kez koptu mu; ilk baglantida yeniden katilma yapilmasin. */
+  const wasDisconnectedRef = useRef(false);
+  /**
+   * pushState asagida tanimlandigi icin ref uzerinden erisiliyor; efekt onu
+   * bagimlilik olarak alsaydi her durum degisiminde yeniden kurulurdu.
+   */
+  const pushStateRef = useRef<
+    ((muted: boolean, deafened: boolean, screenSharing: boolean, cameraOn: boolean) => void) | null
+  >(null);
 
   const microphoneId = useMediaSettingsStore((s) => s.microphoneId);
   const noiseSuppression = useMediaSettingsStore((s) => s.noiseSuppression);
@@ -79,8 +123,56 @@ export function useVoiceSession() {
     setSession(null);
   }, [teardown]);
 
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
   // Sekme kapanirken kanaldan duzgun cikilsin.
   useEffect(() => () => teardown(), [teardown]);
+
+  /**
+   * Soket yeniden baglandiginda ses kanalina tekrar katil.
+   *
+   * Baglanti koptugunda sunucu kullaniciyi kanaldan dusuruyor (hayalet
+   * katilimci kalmasin diye) ama istemci tekrar katilmiyordu: arayuz "ses
+   * baglandi" gostermeye devam ederken sunucu tarafinda kanalda kimse yoktu
+   * ve sinyalleşme reddediliyordu. Ses bir kez gelip sonra kalici olarak
+   * kesilmesinin sebebi buydu.
+   */
+  useEffect(() => {
+    return onConnectionChange((connected) => {
+      if (!connected) {
+        wasDisconnectedRef.current = true;
+        return;
+      }
+      // Ilk baglanti connect() tarafindan zaten yonetiliyor.
+      if (!wasDisconnectedRef.current) return;
+      wasDisconnectedRef.current = false;
+
+      const peers = peersRef.current;
+      const channelId = channelIdRef.current;
+      if (!peers || !channelId || !selfUserId) return;
+
+      void (async () => {
+        // Karsi taraf peer'i zaten kapatmis olur; tek tarafli kalanlari temizle.
+        peers.closePeers();
+        publish(`/app/voice.${channelId}.join`, {});
+
+        const others = await waitForRegistration(channelId, selfUserId);
+        if (channelIdRef.current !== channelId) return;
+
+        patch({ participants: others });
+        for (const participant of others) void peers.addPeer(participant.userId);
+
+        // Sunucudaki kayit sifirlandi; sustur/kamera durumunu yeniden bildir.
+        const current = sessionRef.current;
+        if (current) {
+          pushStateRef.current?.(current.muted, current.deafened,
+            current.screenSharing, current.cameraOn);
+        }
+      })();
+    });
+  }, [selfUserId, patch]);
 
   /**
    * Katilimci listesini duzenli olarak sunucudan tazeler ve eksik peer'lari kurar.
@@ -244,6 +336,15 @@ export function useVoiceSession() {
         }),
       );
 
+      // Sunucu hatalari. Bu kuyruga kimse abone degildi ve sinyal redleri
+      // sessizce kayboluyordu -- sesin neden kurulmadigi hicbir yerde
+      // gorunmuyordu. Artik en azindan konsola dusuyor.
+      unsubscribeRef.current.push(
+        subscribe<{ code: string; message: string }>("/user/queue/errors", (error) => {
+          console.error(`Ses sunucusu hatasi [${error.code}]: ${error.message}`);
+        }),
+      );
+
       // Hedefli signaling
       unsubscribeRef.current.push(
         subscribe<SignalMessage>("/user/queue/signal", (message) => {
@@ -255,13 +356,22 @@ export function useVoiceSession() {
         }),
       );
 
-      // Kanaldakileri al ve mevcut olanlarla baglanti kur.
-      const existing = await voiceApi.participants(channelId);
-      const others = existing.filter((p) => p.userId !== selfUserId);
+      // ONCE katil, SONRA teklif gonder.
+      //
+      // Sunucunun signal ucu gonderenin ses kanalinda olmasini sart kosuyor ve
+      // aksi halde teklifi sessizce reddediyor. Katilmadan once teklif
+      // gondermek, teklifi bizim vermemiz gereken (kucuk UUID) her cifti
+      // sessizce kurulmamis birakiyordu -- baglanti UUID sirasina gore rastgele
+      // calisiyor gibi gorunuyordu.
+      publish(`/app/voice.${channelId}.join`, {});
+
+      // Kaydin islendigini katilimci listesinden dogrula: liste sunucunun
+      // durumunu birebir yansitir, olay teslimatina bagli degildir.
+      const others = await waitForRegistration(channelId, selfUserId);
+      if (channelIdRef.current !== channelId) return;
+
       patch({ participants: others });
       for (const participant of others) void peers.addPeer(participant.userId);
-
-      publish(`/app/voice.${channelId}.join`, {});
     },
     [selfUserId, disconnect, patch],
   );
@@ -284,6 +394,10 @@ export function useVoiceSession() {
     },
     [],
   );
+
+  useEffect(() => {
+    pushStateRef.current = pushState;
+  }, [pushState]);
 
   const toggleMute = useCallback(() => {
     setSession((s) => {

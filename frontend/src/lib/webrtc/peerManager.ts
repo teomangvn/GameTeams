@@ -183,6 +183,18 @@ export class PeerManager {
     }
   }
 
+  /**
+   * Butun peer baglantilarini kapatir; yerel mikrofon/kamera akislari kalir.
+   *
+   * Soket yeniden baglandiginda kullanilir: kopma sirasinda sunucu bizi
+   * kanaldan dusurdugu icin karsi taraf da peer'i kapatmistir. Elde kalan
+   * tek tarafli baglantilari temizleyip sifirdan kurmak, yarim kalmis
+   * durumda beklemekten hizli ve guvenilir.
+   */
+  closePeers() {
+    for (const userId of [...this.peers.keys()]) this.removePeer(userId);
+  }
+
   async handleSignal(message: SignalMessage) {
     const from = message.fromUserId;
     let peer = this.peers.get(from);
