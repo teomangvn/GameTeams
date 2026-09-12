@@ -1,11 +1,14 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Chat,
   MicrophoneOff,
+  Reset,
   Share,
   Video,
   VideoOff,
+  VolumeDown,
   VolumeMute,
+  VolumeUp,
 } from "@carbon/icons-react";
 
 import type { VoiceParticipant } from "@/api/voice";
@@ -13,6 +16,11 @@ import type { VoiceSession } from "@/features/voice/useVoiceSession";
 import { useSpeakingDetection } from "@/features/voice/useSpeaking";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
+import {
+  MAX_USER_VOLUME,
+  useMediaSettingsStore,
+  useUserVolume,
+} from "@/stores/mediaSettingsStore";
 
 /**
  * Ses kanalinin ana gorunumu: her katilimci icin bir kare.
@@ -108,6 +116,8 @@ interface TileData {
   /** Gosterilecek video track'i; yoksa profil fotografi gosterilir. */
   track: MediaStreamTrack | null;
   isSelf: boolean;
+  /** Uzak katilimcinin kimligi; ses seviyesi ayari buna baglanir. */
+  userId: string | null;
   speaking: boolean;
   mirrored: boolean;
 }
@@ -132,6 +142,7 @@ function tilesForSelf(
     cameraOn: session.cameraOn,
     screenSharing: session.screenSharing,
     isSelf: true,
+    userId: null,
     speaking: speaking.has("self") && !session.muted,
   };
 
@@ -166,6 +177,7 @@ function tilesForParticipant(
     cameraOn: participant.cameraOn,
     screenSharing: participant.screenSharing,
     isSelf: false,
+    userId: participant.userId,
     speaking: speaking.has(participant.userId) && !participant.muted,
     mirrored: false,
   };
@@ -214,10 +226,18 @@ function columnsFor(count: number): number {
 }
 
 function Tile({ tile }: { tile: TileData }) {
+  const [volumeOpen, setVolumeOpen] = useState(false);
+
   return (
     <figure
+      // Sag tik da ses ayarini acar; alisilmis bir kisayol.
+      onContextMenu={(event) => {
+        if (!tile.userId) return;
+        event.preventDefault();
+        setVolumeOpen(true);
+      }}
       className={cn(
-        "relative min-h-40 rounded-xl overflow-hidden bg-black border flex items-center justify-center",
+        "group relative min-h-40 rounded-xl overflow-hidden bg-black border flex items-center justify-center",
         "transition-shadow duration-150",
         // Ekran karesi ayirt edilsin: ayni kisinin iki karesi yan yana durabilir.
         tile.isScreen ? "border-emerald-500/40" : "border-neutral-800",
@@ -230,6 +250,15 @@ function Tile({ tile }: { tile: TileData }) {
         <TileVideo track={tile.track} mirrored={tile.mirrored} />
       ) : (
         <Avatar name={tile.name} avatarUrl={tile.avatarUrl} />
+      )}
+
+      {tile.userId && (
+        <VolumeControl
+          userId={tile.userId}
+          name={tile.name}
+          open={volumeOpen}
+          onOpenChange={setVolumeOpen}
+        />
       )}
 
       <figcaption className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 px-3 py-2 bg-gradient-to-t from-black/80 to-transparent">
@@ -250,6 +279,126 @@ function Tile({ tile }: { tile: TileData }) {
         </span>
       </figcaption>
     </figure>
+  );
+}
+
+/**
+ * Uzak katilimcinin bize gelen ses seviyesi.
+ *
+ * Yalnizca yerelde uygulanir ve cihazda saklanir; karsi taraf veya diger
+ * katilimcilar etkilenmez. Buton karenin uzerine gelince gorunur, seviye
+ * varsayilandan farkliysa hep gorunur kalir ki unutulmasin.
+ */
+function VolumeControl({
+  userId,
+  name,
+  open,
+  onOpenChange,
+}: {
+  userId: string;
+  name: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const volume = useUserVolume(userId);
+  const setUserVolume = useMediaSettingsStore((s) => s.setUserVolume);
+  const percent = Math.round(volume * 100);
+  const changed = percent !== 100;
+
+  const Icon = volume === 0 ? VolumeMute : volume < 1 ? VolumeDown : VolumeUp;
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Disari tiklama veya Esc ile kapanir. Fare kareden cikinca kapatmak
+   * kaydirici surukleniyorken paneli kaldirip suruklemeyi yarida kesiyordu.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!panelRef.current?.contains(event.target as Node)) onOpenChange(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onOpenChange(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, onOpenChange]);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpenChange(true)}
+        title={`${name} ses seviyesi`}
+        aria-label={`${name} ses seviyesi`}
+        className={cn(
+          "absolute top-2 right-2 h-7 px-2 rounded-md inline-flex items-center gap-1",
+          "bg-black/60 font-lexend text-[12px] transition-opacity",
+          volume === 0 ? "text-red-400" : "text-neutral-200 hover:text-neutral-50",
+          changed ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+        )}
+      >
+        <Icon size={14} />
+        {changed && `%${percent}`}
+      </button>
+    );
+  }
+
+  return (
+    <div
+      ref={panelRef}
+      className="absolute top-2 right-2 left-2 max-w-64 ml-auto rounded-lg bg-neutral-900/95
+                 border border-neutral-700 px-3 py-2 flex flex-col gap-1.5 shadow-lg shadow-black/40"
+    >
+      <div className="flex items-center gap-2">
+        <span className="font-lexend text-[12px] text-neutral-300 truncate">{name}</span>
+        <span className="ml-auto font-lexend text-[12px] tabular-nums text-neutral-100 shrink-0">
+          %{percent}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setUserVolume(userId, volume === 0 ? 1 : 0)}
+          title={volume === 0 ? "Sesi aç" : "Sustur"}
+          aria-label={volume === 0 ? "Sesi aç" : "Sustur"}
+          className={cn(
+            "size-6 rounded shrink-0 flex items-center justify-center transition-colors",
+            volume === 0 ? "text-red-400 hover:bg-red-500/15" : "text-neutral-300 hover:bg-neutral-800",
+          )}
+        >
+          <Icon size={14} />
+        </button>
+
+        <input
+          type="range"
+          min={0}
+          max={MAX_USER_VOLUME * 100}
+          step={5}
+          value={percent}
+          onChange={(event) => setUserVolume(userId, Number(event.target.value) / 100)}
+          aria-label={`${name} ses seviyesi`}
+          className="flex-1 min-w-0 accent-emerald-500 cursor-pointer"
+        />
+
+        <button
+          type="button"
+          onClick={() => setUserVolume(userId, 1)}
+          disabled={!changed}
+          title="%100'e sıfırla"
+          aria-label="%100'e sıfırla"
+          className="size-6 rounded shrink-0 flex items-center justify-center text-neutral-300
+                     hover:bg-neutral-800 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+        >
+          <Reset size={14} />
+        </button>
+      </div>
+    </div>
   );
 }
 

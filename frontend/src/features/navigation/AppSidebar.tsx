@@ -420,6 +420,9 @@ export interface AppSidebarProps {
   onCreateChannel: () => void;
   onOpenRoomDialog: () => void;
   voice: VoiceSession | null;
+  /** Ses izgarasi su an gorunuyor mu; kontrol cubugundaki donus butonu icin. */
+  voiceViewOpen: boolean;
+  onOpenVoiceView: () => void;
   onToggleMute: () => void;
   onToggleDeafen: () => void;
   onToggleScreenShare: () => void;
@@ -447,6 +450,8 @@ export function AppSidebar({
   onCreateChannel,
   onOpenRoomDialog,
   voice,
+  voiceViewOpen,
+  onOpenVoiceView,
   onToggleMute,
   onToggleDeafen,
   onToggleScreenShare,
@@ -606,6 +611,8 @@ export function AppSidebar({
             deafened={voice.deafened}
             screenSharing={voice.screenSharing}
             cameraOn={voice.cameraOn}
+            viewOpen={voiceViewOpen}
+            onOpenView={onOpenVoiceView}
             onToggleMute={onToggleMute}
             onToggleDeafen={onToggleDeafen}
             onToggleScreenShare={onToggleScreenShare}

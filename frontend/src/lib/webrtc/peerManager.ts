@@ -12,7 +12,7 @@ import type { SignalMessage } from "@/api/voice";
 /** Bu sayidan sonra peer birakilir; sonsuz yeniden deneme kaynak tuketir. */
 const MAX_RECOVERY_ATTEMPTS = 3;
 
-type VideoKind = "camera" | "screen";
+export type VideoKind = "camera" | "screen";
 
 interface VideoSlot {
   track: MediaStreamTrack;
@@ -25,6 +25,12 @@ export interface PeerManagerOptions {
   sendSignal: (message: Omit<SignalMessage, "fromUserId" | "channelId">) => void;
   onRemoteStream: (userId: string, stream: MediaStream) => void;
   onPeerClosed: (userId: string) => void;
+  /**
+   * Yerel kamera veya ekran yayini uygulama disindan bitti (tarayicinin
+   * "paylasimi durdur" butonu, cikarilan kamera). Arayuz durumu buna gore
+   * guncellenmeli; aksi halde "paylasiyor" gorunmeye devam eder.
+   */
+  onLocalVideoEnded?: (kind: VideoKind) => void;
 }
 
 export class PeerManager {
@@ -331,7 +337,13 @@ export class PeerManager {
     else this.screen = slot;
 
     // Kullanici tarayicinin kendi "paylasimi durdur" butonuna basarsa.
-    track.onended = () => void this.unpublishVideo(kind);
+    track.onended = () => {
+      // Yuva unpublishVideo'nun ilk adiminda senkron bosaltiliyor; bildirim
+      // yeniden pazarligi beklemeden gidebilir ve track kimligi artik null okunur.
+      const done = this.unpublishVideo(kind);
+      this.options.onLocalVideoEnded?.(kind);
+      void done;
+    };
 
     const outgoing = this.outgoingStream();
     for (const [userId, peer] of this.peers) {

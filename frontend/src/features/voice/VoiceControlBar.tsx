@@ -9,6 +9,7 @@ import {
   VideoOff,
   PhoneOff,
   SignalStrength,
+  Grid,
 } from "@carbon/icons-react";
 
 import { cn } from "@/lib/utils";
@@ -28,6 +29,10 @@ export interface VoiceControlBarProps {
   deafened: boolean;
   screenSharing: boolean;
   cameraOn: boolean;
+  /** Ses izgarasi su an gorunuyor mu. */
+  viewOpen: boolean;
+  /** Baska bir ekrandayken ses izgarasina geri doner. */
+  onOpenView: () => void;
   onToggleMute: () => void;
   onToggleDeafen: () => void;
   onToggleScreenShare: () => void;
@@ -77,6 +82,8 @@ export function VoiceControlBar({
   deafened,
   screenSharing,
   cameraOn,
+  viewOpen,
+  onOpenView,
   onToggleMute,
   onToggleDeafen,
   onToggleScreenShare,
@@ -86,15 +93,25 @@ export function VoiceControlBar({
   return (
     <div className="w-full rounded-lg bg-neutral-900/80 border border-neutral-800 px-3 py-2 flex flex-col gap-2">
       <div className="flex items-center gap-2 min-w-0">
-        <SignalStrength size={16} className="text-emerald-500 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <div className="font-lexend text-[12px] text-emerald-500 leading-tight">
-            Ses bağlandı{participantCount !== undefined && ` · ${participantCount} kişi`}
+        {/* Kanal bilgisine tiklamak izgaraya geri dondurur; metin kanalina veya
+            baska bir sayfaya gecildikten sonra en kolay bulunan yer burasi. */}
+        <button
+          type="button"
+          onClick={onOpenView}
+          title="Ses ekranına dön"
+          className="min-w-0 flex-1 flex items-center gap-2 rounded-md -mx-1 px-1 py-0.5 text-left
+                     hover:bg-neutral-800/70 transition-colors"
+        >
+          <SignalStrength size={16} className="text-emerald-500 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="font-lexend text-[12px] text-emerald-500 leading-tight">
+              Ses bağlandı{participantCount !== undefined && ` · ${participantCount} kişi`}
+            </div>
+            <div className="font-lexend text-[12px] text-neutral-400 truncate leading-tight hover:underline">
+              {channelName} / {roomName}
+            </div>
           </div>
-          <div className="font-lexend text-[12px] text-neutral-400 truncate leading-tight">
-            {channelName} / {roomName}
-          </div>
-        </div>
+        </button>
         <ControlButton label="Sesten ayrıl" danger onClick={onDisconnect}>
           <PhoneOff size={16} />
         </ControlButton>
@@ -132,6 +149,20 @@ export function VoiceControlBar({
         >
           {cameraOn ? <Video size={16} /> : <VideoOff size={16} />}
         </ControlButton>
+
+        {!viewOpen && (
+          <button
+            type="button"
+            onClick={onOpenView}
+            title="Ses ekranına dön"
+            className="ml-auto h-8 px-2 rounded-md shrink-0 inline-flex items-center gap-1.5
+                       font-lexend text-[12px] text-emerald-400 bg-emerald-500/10
+                       hover:bg-emerald-500/20 transition-colors"
+          >
+            <Grid size={14} />
+            Ekrana dön
+          </button>
+        )}
       </div>
     </div>
   );
