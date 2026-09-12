@@ -14,7 +14,11 @@ import { useAuthStore } from "@/stores/authStore";
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ACCEPTED = "image/png,image/jpeg,image/webp,image/gif";
 
-export function ProfilePage() {
+/**
+ * `embedded` ile uygulama icindeki ayar penceresinde, sayfa cercevesi ve
+ * "Uygulamaya don" baglantisi olmadan gosterilir.
+ */
+export function ProfilePage({ embedded = false }: { embedded?: boolean }) {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
 
@@ -82,16 +86,20 @@ export function ProfilePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#1a1a1a] p-4 sm:p-8">
-      <div className="mx-auto max-w-2xl">
-        <Link
-          to="/"
-          className="inline-flex items-center gap-2 font-lexend text-[13px] text-neutral-400 hover:text-neutral-200"
-        >
-          <ArrowLeft size={16} /> Uygulamaya dön
-        </Link>
+    <div className={embedded ? undefined : "min-h-screen bg-[#1a1a1a] p-4 sm:p-8"}>
+      <div className={embedded ? undefined : "mx-auto max-w-2xl"}>
+        {!embedded && (
+          <>
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 font-lexend text-[13px] text-neutral-400 hover:text-neutral-200"
+            >
+              <ArrowLeft size={16} /> Uygulamaya dön
+            </Link>
 
-        <h1 className="font-lexend font-semibold text-[24px] text-neutral-50 mt-4">Profil</h1>
+            <h1 className="font-lexend font-semibold text-[24px] text-neutral-50 mt-4">Profil</h1>
+          </>
+        )}
 
         {/* --- Profil fotografi --- */}
         <section className="mt-6 rounded-2xl border border-neutral-800 bg-black p-6">
