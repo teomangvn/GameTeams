@@ -18,7 +18,24 @@ public record GameTeamsProperties(
         Webrtc webrtc,
         Cookie cookie,
         Uploads uploads,
-        Security security) {
+        Security security,
+        Oauth oauth) {
+
+    /**
+     * Google / Facebook ile giris. clientId bos olan saglayici kapalidir ve
+     * giris ekraninda butonu gosterilmez; hicbiri tanimli degilse harici
+     * giris tamamen devre disi kalir.
+     */
+    public record Oauth(Provider google, Provider facebook) {
+    }
+
+    public record Provider(String clientId, String clientSecret) {
+
+        public boolean enabled() {
+            return clientId != null && !clientId.isBlank()
+                    && clientSecret != null && !clientSecret.isBlank();
+        }
+    }
 
     public record Cors(List<String> allowedOrigins) {
     }

@@ -19,6 +19,8 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.gameteams.auth.JwtAuthFilter;
+import com.gameteams.auth.oauth.OAuthClients;
+import com.gameteams.auth.oauth.OAuthLoginHandlers;
 
 @Configuration
 public class SecurityConfig {
@@ -31,8 +33,14 @@ public class SecurityConfig {
         this.jwtAuthFilter = jwtAuthFilter;
     }
 
+    /**
+     * Harici giris isleyicileri metot parametresi olarak alinir, kurucuda degil:
+     * isleyiciler AuthService uzerinden bu sinifin PasswordEncoder'ina bagli ve
+     * kurucuya konursa dongusel bagimlilik olusur.
+     */
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, OAuthClients oauthClients,
+            OAuthLoginHandlers oauthHandlers) throws Exception {
         http
                 // Stateless JWT API: cookie tabanlı oturum yok, dolayısıyla CSRF token'ı da yok.
                 // Refresh cookie'si SameSite=Lax ve yalnızca /api/auth yolunda geçerli.
@@ -69,6 +77,18 @@ public class SecurityConfig {
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(
                         new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+
+        // Google / Facebook. Hicbir saglayicinin kimligi tanimli degilse
+        // tamamen kapali kalir; giris ekrani da buton gostermez.
+        var registrations = oauthClients.repository();
+        if (registrations.isPresent()) {
+            http.oauth2Login(oauth -> oauth
+                    .clientRegistrationRepository(registrations.get())
+                    .authorizationEndpoint(endpoint -> endpoint.baseUri(OAuthClients.AUTHORIZATION_BASE))
+                    .redirectionEndpoint(endpoint -> endpoint.baseUri(OAuthClients.CALLBACK_BASE + "/*"))
+                    .successHandler(oauthHandlers.success())
+                    .failureHandler(oauthHandlers.failure()));
+        }
 
         return http.build();
     }

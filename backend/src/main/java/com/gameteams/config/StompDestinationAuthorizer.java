@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import com.gameteams.channel.ChannelService;
 import com.gameteams.common.ApiException;
 import com.gameteams.room.RoomService;
+import com.gameteams.voice.VoiceAccessService;
 
 /**
  * STOMP abonelik yetkilendirmesi.
@@ -28,10 +29,13 @@ public class StompDestinationAuthorizer {
 
     private final ChannelService channelService;
     private final RoomService roomService;
+    private final VoiceAccessService voiceAccess;
 
-    StompDestinationAuthorizer(ChannelService channelService, RoomService roomService) {
+    StompDestinationAuthorizer(ChannelService channelService, RoomService roomService,
+            VoiceAccessService voiceAccess) {
         this.channelService = channelService;
         this.roomService = roomService;
+        this.voiceAccess = voiceAccess;
     }
 
     public void authorizeSubscription(String destination, UUID userId) {
@@ -52,8 +56,8 @@ public class StompDestinationAuthorizer {
                 return;
             }
             if (destination.startsWith(VOICE_PREFIX)) {
-                channelService.requireAccessibleChannel(
-                        parseId(destination, VOICE_PREFIX), userId);
+                // Ses kanali ya da sesli arama: DM'de yalnizca iki taraf dinleyebilir.
+                voiceAccess.requireAccess(parseId(destination, VOICE_PREFIX), userId);
                 return;
             }
             if (destination.startsWith(ROOM_PREFIX)) {

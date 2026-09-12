@@ -91,6 +91,17 @@ gameteams:
     device-verification: ${DEVICE_VERIFICATION:true}
     challenge-ttl: ${DEVICE_CHALLENGE_TTL:PT10M}
     trust-ttl: ${DEVICE_TRUST_TTL:P90D}
+  oauth:
+    # Google Cloud Console > APIs & Services > Credentials > OAuth client ID (Web).
+    # Yetkili yonlendirme URI'si: ${APP_URL}/api/auth/oauth2/callback/google
+    google:
+      client-id: ${GOOGLE_CLIENT_ID:}
+      client-secret: ${GOOGLE_CLIENT_SECRET:}
+    # developers.facebook.com > Uygulama > Facebook Login > Ayarlar.
+    # Gecerli OAuth yonlendirme URI'si: ${APP_URL}/api/auth/oauth2/callback/facebook
+    facebook:
+      client-id: ${FACEBOOK_CLIENT_ID:}
+      client-secret: ${FACEBOOK_CLIENT_SECRET:}
   uploads:
     # Tek EC2 uzerinde calisiyoruz; nesne deposu yerine docker volume.
     avatar-dir: ${AVATAR_DIR:./uploads/avatars}

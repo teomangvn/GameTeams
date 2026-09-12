@@ -18,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.gameteams.channel.ChannelService;
 import com.gameteams.common.ApiException;
 import com.gameteams.room.RoomService;
+import com.gameteams.voice.VoiceAccessService;
 
 /**
  * Spring'in bellek ici broker'i SUBSCRIBE frame'lerini dogrulamaz; kanal
@@ -31,6 +32,9 @@ class StompDestinationAuthorizerTest {
 
     @Mock
     private RoomService roomService;
+
+    @Mock
+    private VoiceAccessService voiceAccess;
 
     @InjectMocks
     private StompDestinationAuthorizer authorizer;
@@ -58,6 +62,15 @@ class StompDestinationAuthorizerTest {
     }
 
     @Test
+    void voiceSubscriptionRequiresVoiceSpaceAccess() {
+        UUID spaceId = UUID.randomUUID();
+
+        authorizer.authorizeSubscription("/topic/voice." + spaceId, userId);
+
+        verify(voiceAccess).requireAccess(spaceId, userId);
+    }
+
+    @Test
     void roomSubscriptionRequiresMembership() {
         UUID roomId = UUID.randomUUID();
 
@@ -72,7 +85,7 @@ class StompDestinationAuthorizerTest {
         assertThatCode(() -> authorizer.authorizeSubscription("/user/queue/errors", userId))
                 .doesNotThrowAnyException();
 
-        verifyNoInteractions(channelService, roomService);
+        verifyNoInteractions(channelService, roomService, voiceAccess);
     }
 
     /**

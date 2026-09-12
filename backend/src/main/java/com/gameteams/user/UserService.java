@@ -60,6 +60,11 @@ public class UserService {
     public void requestEmailChange(UUID userId, String newEmail, String password) {
         User user = require(userId);
 
+        if (!user.hasPassword()) {
+            // Google/Facebook ile acilmis hesap: dogrulanacak bir sifre yok.
+            throw ApiException.badRequest("PASSWORD_NOT_SET",
+                    "Hesabında şifre yok. Önce giriş ekranındaki “Şifremi unuttum” ile şifre belirle.");
+        }
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             throw ApiException.unauthorized("INVALID_PASSWORD", "Şifren hatalı.");
         }

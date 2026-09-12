@@ -14,11 +14,28 @@ import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import { useMediaSettingsStore, videoConstraints } from "@/stores/mediaSettingsStore";
 
+/**
+ * Baglanilacak ses alani: bir odanin ses kanali ya da birebir sesli arama.
+ * Arama sunucuda DM sohbetinin kimligini ses alani olarak kullanir; geri
+ * kalan her sey (izgara, kamera, ekran, gurultu engelleme) aynidir.
+ */
+export interface VoiceTarget {
+  id: string;
+  name: string;
+  /** Ses kanaliysa odasi; aramada null. */
+  roomId: string | null;
+  roomName: string;
+  /** Sesli aramaysa DM sohbetinin kimligi; kanalda null. */
+  conversationId: string | null;
+}
+
 export interface VoiceSession {
   channelId: string;
   channelName: string;
-  roomId: string;
+  roomId: string | null;
   roomName: string;
+  /** Birebir sesli aramada DM sohbeti; ses kanalinda null. */
+  conversationId: string | null;
   muted: boolean;
   deafened: boolean;
   screenSharing: boolean;
@@ -342,7 +359,8 @@ export function useVoiceSession() {
   ]);
 
   const connect = useCallback(
-    async (channelId: string, channelName: string, roomId: string, roomName: string) => {
+    async (target: VoiceTarget) => {
+      const { id: channelId, name: channelName, roomId, roomName, conversationId } = target;
       if (!selfUserId) return;
       if (channelIdRef.current === channelId) return;
 
@@ -364,6 +382,7 @@ export function useVoiceSession() {
         channelName,
         roomId,
         roomName,
+        conversationId,
         muted: false,
         deafened: false,
         screenSharing: false,

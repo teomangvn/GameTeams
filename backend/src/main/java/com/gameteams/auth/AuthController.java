@@ -26,7 +26,6 @@ import com.gameteams.auth.AuthDtos.VerifyDeviceRequest;
 import com.gameteams.auth.AuthDtos.VerifyEmailRequest;
 import com.gameteams.common.ApiException;
 import com.gameteams.common.RateLimiter;
-import com.gameteams.config.GameTeamsProperties;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -35,19 +34,17 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    static final String REFRESH_COOKIE = "gt_refresh";
-    /** "Bu cihazi hatirla" isaretlendiginde yazilir; yeni cihaz kontrolunu atlatir. */
-    static final String DEVICE_COOKIE = "gt_device";
+    static final String REFRESH_COOKIE = AuthCookies.REFRESH_COOKIE;
+    static final String DEVICE_COOKIE = AuthCookies.DEVICE_COOKIE;
 
     private final AuthService authService;
     private final RateLimiter rateLimiter;
-    private final GameTeamsProperties.Cookie cookieConfig;
+    private final AuthCookies cookies;
 
-    AuthController(AuthService authService, RateLimiter rateLimiter,
-            GameTeamsProperties properties) {
+    AuthController(AuthService authService, RateLimiter rateLimiter, AuthCookies cookies) {
         this.authService = authService;
         this.rateLimiter = rateLimiter;
-        this.cookieConfig = properties.cookie();
+        this.cookies = cookies;
     }
 
     @PostMapping("/register")
@@ -198,21 +195,15 @@ public class AuthController {
     }
 
     private ResponseCookie refreshCookie(String value, Duration ttl) {
-        return baseRefreshCookie(value).maxAge(ttl).build();
+        return cookies.refresh(value, ttl);
     }
 
     private ResponseCookie expiredRefreshCookie() {
-        return baseRefreshCookie("").maxAge(Duration.ZERO).build();
+        return cookies.expiredRefresh();
     }
 
     private ResponseCookie deviceCookie(String value, Duration ttl) {
-        return ResponseCookie.from(DEVICE_COOKIE, value)
-                .httpOnly(true)
-                .secure(cookieConfig.secure())
-                .sameSite(cookieConfig.sameSite())
-                .path("/api/auth")
-                .maxAge(ttl)
-                .build();
+        return cookies.device(value, ttl);
     }
 
     private static String readCookie(HttpServletRequest request, String name) {
@@ -227,18 +218,8 @@ public class AuthController {
         return null;
     }
 
-    private ResponseCookie.ResponseCookieBuilder baseRefreshCookie(String value) {
-        return ResponseCookie.from(REFRESH_COOKIE, value)
-                .httpOnly(true)
-                // Dev HTTP uzerinden calisir, prod HTTPS. Sabit false birakilirsa
-                // prod'da cookie duz baglantida da gonderilirdi.
-                .secure(cookieConfig.secure())
-                .sameSite(cookieConfig.sameSite())
-                .path("/api/auth");
-    }
-
     /** Ters vekil arkasında gerçek istemci IP'si X-Forwarded-For'da gelir. */
-    private static String clientIp(HttpServletRequest request) {
+    public static String clientIp(HttpServletRequest request) {
         String forwarded = request.getHeader("X-Forwarded-For");
         if (forwarded != null && !forwarded.isBlank()) {
             return forwarded.split(",")[0].trim();

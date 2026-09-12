@@ -243,7 +243,7 @@ export function ProfilePage({ embedded = false }: { embedded?: boolean }) {
           </div>
         </form>
 
-        <EmailSection currentEmail={user.email} />
+        <EmailSection currentEmail={user.email} hasPassword={user.hasPassword} />
       </div>
     </div>
   );
@@ -256,7 +256,14 @@ export function ProfilePage({ embedded = false }: { embedded?: boolean }) {
  * tiklandiginda gecerli olur. Mevcut sifre isteniyor cunku calinmis bir
  * oturumla adresin degistirilmesi hesabi tumuyle ele gecirmeye yeterdi.
  */
-function EmailSection({ currentEmail }: { currentEmail: string }) {
+function EmailSection({
+  currentEmail,
+  hasPassword,
+}: {
+  currentEmail: string;
+  /** Google/Facebook ile acilan hesapta sifre yok; degisiklik sifre ister. */
+  hasPassword: boolean;
+}) {
   const [newEmail, setNewEmail] = useState("");
   const [password, setPassword] = useState("");
   const [sending, setSending] = useState(false);
@@ -279,6 +286,21 @@ function EmailSection({ currentEmail }: { currentEmail: string }) {
       setSending(false);
     }
   };
+
+  if (!hasPassword) {
+    return (
+      <section className="mt-4 rounded-2xl border border-neutral-800 bg-black p-6">
+        <h2 className="font-lexend font-semibold text-[16px] text-neutral-50">E-posta adresi</h2>
+        <p className="font-lexend text-[13px] text-neutral-400 mt-1">
+          Şu anki adresin: <span className="text-neutral-200">{currentEmail}</span>
+        </p>
+        <p className="font-lexend text-[12px] text-neutral-500 mt-4 leading-relaxed">
+          Hesabına Google veya Facebook ile giriş yapıyorsun ve bir şifren yok. Adresini
+          değiştirmek için önce çıkış yapıp giriş ekranındaki “Şifremi unuttum” ile şifre belirle.
+        </p>
+      </section>
+    );
+  }
 
   return (
     <form

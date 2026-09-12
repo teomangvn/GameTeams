@@ -16,7 +16,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.gameteams.auth.AuthenticatedUser;
-import com.gameteams.channel.ChannelService;
 import com.gameteams.config.GameTeamsProperties;
 import com.gameteams.voice.VoiceDtos.IceServer;
 import com.gameteams.voice.VoiceDtos.IceServersResponse;
@@ -27,13 +26,13 @@ public class IceServerController {
 
     private final GameTeamsProperties properties;
     private final VoiceStateService voiceState;
-    private final ChannelService channelService;
+    private final VoiceAccessService voiceAccess;
 
     IceServerController(GameTeamsProperties properties, VoiceStateService voiceState,
-            ChannelService channelService) {
+            VoiceAccessService voiceAccess) {
         this.properties = properties;
         this.voiceState = voiceState;
-        this.channelService = channelService;
+        this.voiceAccess = voiceAccess;
     }
 
     /**
@@ -71,7 +70,8 @@ public class IceServerController {
     @GetMapping("/api/voice/channels/{channelId}/participants")
     List<VoiceParticipant> participants(@AuthenticationPrincipal AuthenticatedUser me,
             @PathVariable UUID channelId) {
-        channelService.requireAccessibleChannel(channelId, me.id());
+        // Ses kanali veya sesli arama (DM sohbeti) olabilir.
+        voiceAccess.requireAccess(channelId, me.id());
         return voiceState.participants(channelId);
     }
 
