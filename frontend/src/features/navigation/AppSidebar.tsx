@@ -228,14 +228,14 @@ function buildFriendsPanel(
   onDecline: (friendshipId: string) => void,
 ): SidebarPanel {
   /**
-   * Arkadasa tiklamak dogrudan mesajlasmayi acar. Yanindaki ok, mesaj ve
-   * sesli arama seceneklerini gosterir.
+   * Arkadasa tiklamak secenekleri (mesaj, sesli arama) acar; kullanici ne
+   * yapacagini kendisi secer. Satirda onSelect bilerek yok: olsaydi tiklama
+   * dogrudan DM'e gecip listeyi hic gostermezdi.
    */
   const friendItem = (f: Friend): SidebarMenuItem => ({
     id: f.userId,
     icon: <StatusDot online={f.online} />,
     label: f.displayName,
-    onSelect: () => onOpenDm(f.userId),
     children: [
       {
         id: `${f.userId}-message`,

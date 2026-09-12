@@ -71,8 +71,10 @@ public class DmService {
         User other = users.findById(otherUserId)
                 .orElseThrow(() -> ApiException.notFound("USER_NOT_FOUND", "Kullanici bulunamadi."));
 
-        UUID smaller = userId.compareTo(otherUserId) < 0 ? userId : otherUserId;
-        UUID larger = userId.compareTo(otherUserId) < 0 ? otherUserId : userId;
+        // Veritabaniyla ayni sira; bkz. DmConversation#compareLikePostgres.
+        boolean selfFirst = DmConversation.compareLikePostgres(userId, otherUserId) < 0;
+        UUID smaller = selfFirst ? userId : otherUserId;
+        UUID larger = selfFirst ? otherUserId : userId;
 
         DmConversation conversation = conversations.findByOrderedPair(smaller, larger)
                 .orElseGet(() -> conversations.save(DmConversation.between(self, other)));

@@ -44,10 +44,27 @@ public class DmConversation {
     /** Siralamayi cagirana birakmamak icin fabrika uzerinden olusturulur. */
     public static DmConversation between(User first, User second) {
         DmConversation conversation = new DmConversation();
-        boolean firstIsSmaller = first.getId().compareTo(second.getId()) < 0;
+        boolean firstIsSmaller = compareLikePostgres(first.getId(), second.getId()) < 0;
         conversation.userA = firstIsSmaller ? first : second;
         conversation.userB = firstIsSmaller ? second : first;
         return conversation;
+    }
+
+    /**
+     * UUID'leri PostgreSQL'in siraladigi gibi karsilastirir (baytlar isaretsiz).
+     *
+     * Tablodaki CHECK (user_a_id < user_b_id) kurali veritabaninin sirasini
+     * kullanir. Java'nin UUID.compareTo'su ise iki yariyi ISARETLI long olarak
+     * karsilastiriyor: 8-f ile baslayan kimligi negatif sayip kucuk goruyor.
+     * Kimliklerden biri 0-7, digeri 8-f ile basladiginda Java ile veritabani
+     * ters siralama yapiyor, kayit kurala takiliyor ve sohbet hic acilamiyordu.
+     * Yalnizca bazi kullanici ciftlerinde hata cikmasinin sebebi buydu.
+     */
+    public static int compareLikePostgres(UUID a, UUID b) {
+        int high = Long.compareUnsigned(a.getMostSignificantBits(), b.getMostSignificantBits());
+        return high != 0
+                ? high
+                : Long.compareUnsigned(a.getLeastSignificantBits(), b.getLeastSignificantBits());
     }
 
     @PrePersist
