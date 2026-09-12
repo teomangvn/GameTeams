@@ -37,9 +37,9 @@ import SettingsIsland, { type SettingsTab } from "@/features/settings/SettingsIs
  */
 export function AppShell() {
   const voice = useVoice();
-  // Baska bir sayfadan (ayarlar, profil) donuldugunde sese bagliysak o odaya ac.
+  // Baska bir sayfadan donuldugunde sese bagliysak o odaya (aramadaysak DM'lere) ac.
   const [activeSection, setActiveSection] = useState<string>(
-    () => voice.session?.roomId ?? "quickmatch",
+    () => voice.session?.roomId ?? (voice.session?.conversationId ? "dms" : "quickmatch"),
   );
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [membersVisible, setMembersVisible] = useState(true);
@@ -85,6 +85,9 @@ export function AppShell() {
   const voiceRoomQuery = useRoom(voice.session?.roomId ?? null);
   const voiceChannel =
     voiceRoomQuery.data?.channels.find((c) => c.id === voice.session?.channelId) ?? null;
+  // Sesli aramada izgaranin yanindaki sohbet o kisiyle olan DM'dir.
+  const callConversation =
+    conversationsQuery.data?.find((c) => c.id === voice.session?.conversationId) ?? null;
 
   // Odaya gecildiginde ilk metin kanalini ac.
   useEffect(() => {
@@ -110,7 +113,13 @@ export function AppShell() {
     (channel: Channel) => {
       if (!activeRoom) return;
       // Zaten bagli olunan kanala tiklamak yeniden baglanmaz, izgarayi geri acar.
-      void voice.connect(channel.id, channel.name, activeRoom.id, activeRoom.name);
+      void voice.connect({
+        id: channel.id,
+        name: channel.name,
+        roomId: activeRoom.id,
+        roomName: activeRoom.name,
+        conversationId: null,
+      });
       setVoiceViewOpen(true);
     },
     [activeRoom, voice, setVoiceViewOpen],
@@ -119,10 +128,26 @@ export function AppShell() {
   /** Baska bir ekrandayken ses izgarasina geri doner. */
   const handleOpenVoiceView = useCallback(() => {
     if (!voice.session) return;
-    // Kenar cubugu da ses kanalinin odasini gostersin; katilimcilar orada.
-    setActiveSection(voice.session.roomId);
+    if (voice.session.roomId) {
+      // Kenar cubugu da ses kanalinin odasini gostersin; katilimcilar orada.
+      setActiveSection(voice.session.roomId);
+    } else {
+      // Sesli arama: DM listesi acilsin, aranan kisi secili olsun.
+      setActiveSection("dms");
+      if (callConversation) setActiveConversation(callConversation);
+    }
     setVoiceViewOpen(true);
-  }, [voice.session, setVoiceViewOpen]);
+  }, [voice.session, callConversation, setVoiceViewOpen]);
+
+  /** Sesli arama baslatir; DM listesine gecip o kisiyi secer. */
+  const handleStartCall = useCallback(
+    (conversation: Conversation) => {
+      setActiveSection("dms");
+      setActiveConversation(conversation);
+      voice.startCall(conversation);
+    },
+    [voice],
+  );
 
   const handleOpenDmWith = useCallback(
     async (userId: string) => {
@@ -140,6 +165,18 @@ export function AppShell() {
       setVoiceViewOpen(false);
     },
     [openConversation, setVoiceViewOpen],
+  );
+
+  /** Arkadas listesinden arama: sohbet yoksa once olusturulur. */
+  const handleCallFriend = useCallback(
+    async (userId: string) => {
+      try {
+        handleStartCall(await openConversation.mutateAsync(userId));
+      } catch (error) {
+        toast.error(error instanceof ApiError ? error.message : "Arama başlatılamadı.");
+      }
+    },
+    [openConversation, handleStartCall],
   );
 
   const handleAddFriend = useCallback(
@@ -204,6 +241,7 @@ export function AppShell() {
             setVoiceViewOpen(false);
           }}
           onOpenDmWith={(userId) => void handleOpenDmWith(userId)}
+          onCallFriend={(userId) => void handleCallFriend(userId)}
           onAcceptFriendRequest={(id) => acceptRequest.mutate(id)}
           onDeclineFriendRequest={(id) => declineRequest.mutate(id)}
           onAddFriend={() => setPrompt("friend")}
@@ -229,12 +267,18 @@ export function AppShell() {
               session={voice.session}
               chatOpen={voiceChatOpen}
               onToggleChat={() => setVoiceChatOpen((value) => !value)}
+              calling={
+                voice.outgoingCall?.conversationId === voice.session.conversationId
+                  ? voice.outgoingCall?.to
+                  : null
+              }
+              onCancelCall={voice.disconnect}
             />
-            {voiceChatOpen && voiceChannel && (
+            {voiceChatOpen && (voiceChannel || callConversation) && (
               <div className="w-96 shrink-0 border-l border-neutral-800 flex">
                 <ChatArea
                   channel={voiceChannel}
-                  conversation={null}
+                  conversation={voice.session.conversationId ? callConversation : null}
                   roomName={voice.session.roomName}
                   membersVisible={false}
                   onToggleMembers={() => undefined}
@@ -247,6 +291,10 @@ export function AppShell() {
           channel={activeChannel}
           conversation={visibleConversation}
           roomName={activeRoom?.name ?? ""}
+          onStartCall={visibleConversation ? () => handleStartCall(visibleConversation) : undefined}
+          inCall={
+            visibleConversation !== null && voice.session?.conversationId === visibleConversation.id
+          }
           membersVisible={membersVisible}
           onToggleMembers={() => setMembersVisible((v) => !v)}
           emptyHint={

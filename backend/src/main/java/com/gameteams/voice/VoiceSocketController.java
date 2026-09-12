@@ -9,9 +9,6 @@ import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
-import com.gameteams.channel.Channel;
-import com.gameteams.channel.ChannelService;
-import com.gameteams.channel.ChannelType;
 import com.gameteams.common.ApiException;
 import com.gameteams.config.StompPrincipal;
 import com.gameteams.user.User;
@@ -31,17 +28,15 @@ import com.gameteams.voice.VoiceDtos.VoiceStateRequest;
 public class VoiceSocketController {
 
     private static final Logger log = LoggerFactory.getLogger(VoiceSocketController.class);
-    private static final int DEFAULT_USER_LIMIT = 6;
-
     private final VoiceStateService voiceState;
-    private final ChannelService channelService;
+    private final VoiceAccessService voiceAccess;
     private final UserRepository users;
     private final SimpMessagingTemplate broker;
 
-    VoiceSocketController(VoiceStateService voiceState, ChannelService channelService,
+    VoiceSocketController(VoiceStateService voiceState, VoiceAccessService voiceAccess,
             UserRepository users, SimpMessagingTemplate broker) {
         this.voiceState = voiceState;
-        this.channelService = channelService;
+        this.voiceAccess = voiceAccess;
         this.users = users;
         this.broker = broker;
     }
@@ -49,11 +44,8 @@ public class VoiceSocketController {
     @MessageMapping("/voice.{channelId}.join")
     public void join(@DestinationVariable UUID channelId, StompPrincipal principal) {
         try {
-            Channel channel = channelService.requireAccessibleChannel(channelId, principal.userId());
-            if (channel.getType() != ChannelType.VOICE) {
-                throw ApiException.badRequest("NOT_A_VOICE_CHANNEL",
-                        "Bu kanal ses kanali degil.");
-            }
+            // Ses kanali ya da iki kisilik sesli arama (DM sohbeti).
+            var space = voiceAccess.requireAccess(channelId, principal.userId());
 
             User user = users.findById(principal.userId())
                     .orElseThrow(() -> ApiException.unauthorized("USER_NOT_FOUND",
@@ -63,8 +55,7 @@ public class VoiceSocketController {
                     user.getId(), user.getUsername(), user.getDisplayName(), user.getAvatarUrl(),
                     false, false, false, false, null, null);
 
-            int limit = channel.getUserLimit() != null ? channel.getUserLimit() : DEFAULT_USER_LIMIT;
-            voiceState.join(channelId, participant, limit)
+            voiceState.join(channelId, participant, space.userLimit())
                     // Onceki kanaldan ayrilma da duyurulmali, yoksa oradaki
                     // katilimcilar peer baglantisini kapatmaz.
                     .ifPresent(previous -> broadcast(previous, VoiceEvent.left(previous, participant)));

@@ -38,3 +38,20 @@ export const voiceApi = {
   participants: (channelId: string) =>
     request<VoiceParticipant[]>(`/api/voice/channels/${channelId}/participants`),
 };
+
+export interface CallParty {
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+}
+
+/**
+ * /user/queue/calls olayi. `user` olayi tetikleyen karsi taraf: RINGING'de
+ * arayan, DECLINED/CANCELLED'da reddeden ya da vazgecen, UNAVAILABLE'da
+ * ulasilamayan kisi.
+ */
+export interface CallEvent {
+  type: "RINGING" | "DECLINED" | "CANCELLED" | "UNAVAILABLE";
+  conversationId: string;
+  user: CallParty;
+}

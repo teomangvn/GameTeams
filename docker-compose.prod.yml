@@ -59,6 +59,11 @@ services:
       TURN_URLS: ${TURN_URLS}
       TURN_SECRET: ${TURN_SECRET}
       TURN_TTL: ${TURN_TTL:-PT12H}
+      # Google / Facebook ile giris; bos olan saglayici kapali kalir.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      FACEBOOK_CLIENT_ID: ${FACEBOOK_CLIENT_ID:-}
+      FACEBOOK_CLIENT_SECRET: ${FACEBOOK_CLIENT_SECRET:-}
       # ADMIN_PASSWORD bilerek gecilmiyor: tanimsiz oldugunda AdminUserSeeder
       # calismaz. Prod'da admin hesabi seed edilmemeli; hesap kayit akisiyla
       # olusturulup veritabanindan role='ADMIN' yapilir.

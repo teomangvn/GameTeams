@@ -15,6 +15,7 @@ import {
   Headphones,
   Checkmark,
   Close,
+  Phone,
   UserFollow,
   Trophy,
   Time,
@@ -222,9 +223,34 @@ function buildFriendsPanel(
   incoming: FriendRequest[],
   onAddFriend: () => void,
   onOpenDm: (userId: string) => void,
+  onCall: (userId: string) => void,
   onAccept: (friendshipId: string) => void,
   onDecline: (friendshipId: string) => void,
 ): SidebarPanel {
+  /**
+   * Arkadasa tiklamak dogrudan mesajlasmayi acar. Yanindaki ok, mesaj ve
+   * sesli arama seceneklerini gosterir.
+   */
+  const friendItem = (f: Friend): SidebarMenuItem => ({
+    id: f.userId,
+    icon: <StatusDot online={f.online} />,
+    label: f.displayName,
+    onSelect: () => onOpenDm(f.userId),
+    children: [
+      {
+        id: `${f.userId}-message`,
+        icon: <Chat size={16} className={iconClass} />,
+        label: "Mesaj gönder",
+        onSelect: () => onOpenDm(f.userId),
+      },
+      {
+        id: `${f.userId}-call`,
+        icon: <Phone size={16} className={f.online ? "text-emerald-400" : iconClass} />,
+        label: f.online ? "Sesli ara" : "Sesli ara (çevrimdışı)",
+        onSelect: () => onCall(f.userId),
+      },
+    ],
+  });
   const online = friends.filter((f) => f.online);
   const offline = friends.filter((f) => !f.online);
 
@@ -261,21 +287,11 @@ function buildFriendsPanel(
   sections.push(
     {
       title: `Çevrimiçi — ${online.length}`,
-      items: online.map<SidebarMenuItem>((f) => ({
-        id: f.userId,
-        icon: <StatusDot online />,
-        label: f.displayName,
-        onSelect: () => onOpenDm(f.userId),
-      })),
+      items: online.map(friendItem),
     },
     {
       title: `Çevrimdışı — ${offline.length}`,
-      items: offline.map<SidebarMenuItem>((f) => ({
-        id: f.userId,
-        icon: <StatusDot online={false} />,
-        label: f.displayName,
-        onSelect: () => onOpenDm(f.userId),
-      })),
+      items: offline.map(friendItem),
     },
     {
       title: "İşlemler",
@@ -405,6 +421,8 @@ export interface AppSidebarProps {
   activeConversationId: string | null;
   onSelectConversation: (conversation: Conversation) => void;
   onOpenDmWith: (userId: string) => void;
+  /** Arkadasi sesli arar. */
+  onCallFriend: (userId: string) => void;
   onAcceptFriendRequest: (friendshipId: string) => void;
   onDeclineFriendRequest: (friendshipId: string) => void;
   onAddFriend: () => void;
@@ -442,6 +460,7 @@ export function AppSidebar({
   activeConversationId,
   onSelectConversation,
   onOpenDmWith,
+  onCallFriend,
   onAcceptFriendRequest,
   onDeclineFriendRequest,
   onAddFriend,
@@ -525,6 +544,7 @@ export function AppSidebar({
           incomingRequests,
           onAddFriend,
           onOpenDmWith,
+          onCallFriend,
           onAcceptFriendRequest,
           onDeclineFriendRequest,
         );
@@ -561,6 +581,7 @@ export function AppSidebar({
     onCreateChannel,
     onSelectConversation,
     onOpenDmWith,
+    onCallFriend,
     onAcceptFriendRequest,
     onDeclineFriendRequest,
     onAddFriend,

@@ -6,6 +6,7 @@ import AdminPage from '@/features/admin/AdminPage'
 import AppShell from '@/features/shell/AppShell'
 import ForgotPasswordPage from '@/features/auth/ForgotPasswordPage'
 import LoginPage from '@/features/auth/LoginPage'
+import OAuthCallbackPage from '@/features/auth/OAuthCallbackPage'
 import ConfirmEmailChangePage from '@/features/profile/ConfirmEmailChangePage'
 import ProfilePage from '@/features/profile/ProfilePage'
 import DeviceSettingsPage from '@/features/settings/DeviceSettingsPage'
@@ -40,6 +41,7 @@ export default function App() {
         <VoiceSessionProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/verify-email" element={<VerifyEmailPage />} />
             <Route path="/confirm-email-change" element={<ConfirmEmailChangePage />} />

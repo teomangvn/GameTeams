@@ -30,7 +30,8 @@ public class User {
     @Column(nullable = false, length = 255)
     private String email;
 
-    @Column(name = "password_hash", nullable = false, length = 100)
+    /** Google/Facebook ile acilan hesapta null; bkz. V12 migration. */
+    @Column(name = "password_hash", length = 100)
     private String passwordHash;
 
     @Column(name = "avatar_url")
@@ -116,6 +117,10 @@ public class User {
 
     public String getPasswordHash() {
         return passwordHash;
+    }
+
+    public boolean hasPassword() {
+        return passwordHash != null;
     }
 
     /**

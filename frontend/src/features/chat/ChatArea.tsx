@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Hashtag, Chat, SendAlt, UserMultiple, Attachment } from "@carbon/icons-react";
+import { Hashtag, Chat, SendAlt, UserMultiple, Attachment, Phone, PhoneFilled } from "@carbon/icons-react";
 
 import EmojiPicker from "@/features/chat/EmojiPicker";
 
@@ -21,6 +21,10 @@ export interface ChatAreaProps {
   onToggleMembers: () => void;
   /** Hicbir hedef secili degilken gosterilecek yonlendirme. */
   emptyHint?: string;
+  /** DM'de sag ustteki arama butonu; verilmezse buton gosterilmez. */
+  onStartCall?: () => void;
+  /** Bu kisiyle su an aramada miyiz (buton "Aramaya don" olur). */
+  inCall?: boolean;
 }
 
 const timeFormatter = new Intl.DateTimeFormat("tr-TR", {
@@ -164,6 +168,8 @@ export function ChatArea({
   membersVisible,
   onToggleMembers,
   emptyHint,
+  onStartCall,
+  inCall = false,
 }: ChatAreaProps) {
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -282,6 +288,22 @@ export function ChatArea({
           </>
         )}
         <span className="ml-auto flex items-center gap-1 shrink-0">
+          {isDm && onStartCall && (
+            <button
+              type="button"
+              onClick={onStartCall}
+              title={inCall ? "Aramaya dön" : `${title} kişisini sesli ara`}
+              className={cn(
+                "h-8 px-2.5 rounded-md inline-flex items-center gap-1.5 font-lexend text-[13px] transition-colors",
+                inCall
+                  ? "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
+                  : "text-neutral-300 hover:bg-neutral-800 hover:text-neutral-50",
+              )}
+            >
+              {inCall ? <PhoneFilled size={16} /> : <Phone size={16} />}
+              {inCall ? "Aramaya dön" : "Sesli ara"}
+            </button>
+          )}
           {!isDm && (
           <button
             type="button"

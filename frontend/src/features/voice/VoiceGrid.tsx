@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import {
   Chat,
   MicrophoneOff,
+  Phone,
+  PhoneOff,
   Reset,
   Share,
   Video,
@@ -11,7 +13,7 @@ import {
   VolumeUp,
 } from "@carbon/icons-react";
 
-import type { VoiceParticipant } from "@/api/voice";
+import type { CallParty, VoiceParticipant } from "@/api/voice";
 import type { VoiceSession } from "@/features/voice/useVoiceSession";
 import { useSpeakingDetection } from "@/features/voice/useSpeaking";
 import { cn } from "@/lib/utils";
@@ -33,11 +35,17 @@ export function VoiceGrid({
   session,
   chatOpen,
   onToggleChat,
+  calling = null,
+  onCancelCall,
 }: {
   session: VoiceSession;
   chatOpen: boolean;
   onToggleChat: () => void;
+  /** Cevap bekleyen arama; aranan kisinin yerine "Araniyor" karesi gosterilir. */
+  calling?: CallParty | null;
+  onCancelCall?: () => void;
 }) {
+  const isCall = session.conversationId !== null;
   const self = useAuthStore((s) => s.user);
 
   // Konusma gostergesi icin ses tasiyan tum akislar: kendi mikrofonumuz ve
@@ -60,7 +68,11 @@ export function VoiceGrid({
   return (
     <div className="flex-1 min-w-0 bg-neutral-950 flex flex-col">
       <header className="h-14 shrink-0 border-b border-neutral-800 flex items-center gap-2 px-6">
-        <Video size={18} className="text-neutral-400 shrink-0" />
+        {isCall ? (
+          <Phone size={18} className="text-neutral-400 shrink-0" />
+        ) : (
+          <Video size={18} className="text-neutral-400 shrink-0" />
+        )}
         <h2 className="font-lexend font-semibold text-[15px] text-neutral-50 truncate">
           {session.channelName}
         </h2>
@@ -75,7 +87,7 @@ export function VoiceGrid({
           type="button"
           onClick={onToggleChat}
           aria-pressed={chatOpen}
-          title="Kanal sohbeti"
+          title={isCall ? "Mesajlar" : "Kanal sohbeti"}
           className={cn(
             "ml-2 h-8 px-2.5 rounded-md shrink-0 inline-flex items-center gap-1.5",
             "font-lexend text-[13px] transition-colors",
@@ -92,11 +104,14 @@ export function VoiceGrid({
       <div className="flex-1 min-h-0 overflow-y-auto p-4">
         <div
           className="grid gap-3 h-full auto-rows-fr"
-          style={{ gridTemplateColumns: `repeat(${columnsFor(tiles.length)}, minmax(0, 1fr))` }}
+          style={{
+            gridTemplateColumns: `repeat(${columnsFor(tiles.length + (calling ? 1 : 0))}, minmax(0, 1fr))`,
+          }}
         >
           {tiles.map((tile) => (
             <Tile key={tile.key} tile={tile} />
           ))}
+          {calling && <CallingTile party={calling} onCancel={onCancelCall} />}
         </div>
       </div>
     </div>
@@ -399,6 +414,35 @@ function VolumeControl({
         </button>
       </div>
     </div>
+  );
+}
+
+/** Aranan kisi henuz katilmadi: avatar etrafinda nabiz ve iptal butonu. */
+function CallingTile({ party, onCancel }: { party: CallParty; onCancel?: () => void }) {
+  return (
+    <figure className="relative min-h-40 rounded-xl overflow-hidden bg-black border border-dashed border-neutral-700 flex flex-col items-center justify-center gap-4">
+      <span className="relative">
+        <span className="absolute inset-0 rounded-full bg-emerald-500/30 animate-ping" />
+        <span className="relative block">
+          <Avatar name={party.displayName} avatarUrl={party.avatarUrl} />
+        </span>
+      </span>
+      <figcaption className="text-center">
+        <span className="block font-lexend text-[14px] text-neutral-100">{party.displayName}</span>
+        <span className="block font-lexend text-[13px] text-neutral-400">Aranıyor…</span>
+      </figcaption>
+      {onCancel && (
+        <button
+          type="button"
+          onClick={onCancel}
+          className="h-9 px-3 rounded-lg inline-flex items-center gap-2 font-lexend text-[13px]
+                     bg-red-500/15 text-red-300 hover:bg-red-500/25 transition-colors"
+        >
+          <PhoneOff size={16} />
+          Aramayı iptal et
+        </button>
+      )}
+    </figure>
   );
 }
 

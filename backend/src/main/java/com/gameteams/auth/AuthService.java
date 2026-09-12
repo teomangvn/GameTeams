@@ -127,6 +127,8 @@ public class AuthService {
     public LoginOutcome login(LoginRequest request, String userAgent, String ip,
             String deviceToken) {
         User user = users.findByEmailIgnoreCase(request.email())
+                // Google/Facebook ile acilan hesabin sifresi yok; sifreyle girilemez.
+                .filter(User::hasPassword)
                 .filter(u -> passwordEncoder.matches(request.password(), u.getPasswordHash()))
                 // E-posta yanlış mı şifre mi — ayırt edilmemeli.
                 .orElseThrow(() -> ApiException.unauthorized(
@@ -153,6 +155,23 @@ public class AuthService {
 
         user.setLastSeenAt(Instant.now());
         return new LoginOutcome.Authenticated(issueTokens(user, userAgent, ip));
+    }
+
+    /**
+     * Harici saglayici (Google, Facebook) kimligi dogruladiktan sonra oturumu acar.
+     *
+     * Cihaz dogrulamasi uygulanmaz: o kontrol calinmis sifreye karsi. Burada
+     * sifre yok; kimligi saglayici kendi (cogu zaman iki adimli) girisiyle
+     * dogruladi. Kod zaten ayni e-posta kutusuna gidecegi icin, o kutunun
+     * sahibine ikinci bir engel koymak koruma eklemezdi.
+     */
+    @Transactional
+    public LoginResult completeExternalLogin(User user, String userAgent, String ip) {
+        if (user.isDisabled()) {
+            throw ApiException.forbidden("ACCOUNT_DISABLED", "Hesabın devre dışı bırakıldı.");
+        }
+        user.setLastSeenAt(Instant.now());
+        return issueTokens(user, userAgent, ip);
     }
 
     /** Dogrulanmis kullanicinin cihazini hatirlar; cereze yazilacak token doner. */

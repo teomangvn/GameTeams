@@ -13,7 +13,11 @@ export interface AuthUser {
   emailVerified: boolean;
   region: string | null;
   language: string | null;
+  /** Google/Facebook ile acilan hesapta false. */
+  hasPassword: boolean;
 }
+
+export type OAuthProvider = "google" | "facebook";
 
 interface AuthResponse {
   accessToken: string;
@@ -101,4 +105,7 @@ export const authApi = {
     }),
 
   me: () => request<AuthUser>("/api/auth/me"),
+
+  /** Sunucuda kimlik bilgisi tanimli harici giris saglayicilari. */
+  oauthProviders: () => request<{ providers: string[] }>("/api/auth/oauth2/providers"),
 };

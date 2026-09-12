@@ -10,6 +10,7 @@ import {
   SubmitButton,
   TextInput,
 } from "@/features/auth/AuthLayout";
+import OAuthButtons from "@/features/auth/OAuthButtons";
 
 export function RegisterPage() {
   const [form, setForm] = useState({
@@ -80,6 +81,8 @@ export function RegisterPage() {
       }
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <OAuthButtons disabled={loading} />
+
         {error && <FormAlert tone="error">{error}</FormAlert>}
 
         <Field label="Kullanıcı adı" error={fieldErrors.username}>

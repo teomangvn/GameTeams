@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { authApi } from "@/api/auth";
 import { ApiError } from "@/api/client";
@@ -11,15 +11,20 @@ import {
   SubmitButton,
   TextInput,
 } from "@/features/auth/AuthLayout";
+import OAuthButtons, { describeOAuthError } from "@/features/auth/OAuthButtons";
 
 export function LoginPage() {
   const navigate = useNavigate();
   const login = useAuthStore((s) => s.login);
   const verifyDevice = useAuthStore((s) => s.verifyDevice);
 
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // Google/Facebook donusu hata koduyla buraya yonlenir.
+  const [error, setError] = useState<string | null>(() =>
+    describeOAuthError(searchParams.get("oauthError")),
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // Doğrulanmamış hesapta "tekrar gönder" bağlantısı gösterilir.
@@ -156,6 +161,8 @@ export function LoginPage() {
       }
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <OAuthButtons disabled={loading} />
+
         {error && (
           <FormAlert tone="error">
             {error}

@@ -69,7 +69,9 @@ public final class AuthDtos {
             Role role,
             boolean emailVerified,
             String region,
-            String language) {
+            String language,
+            /** Google/Facebook ile acilan hesapta false; e-posta degisikligi sifre ister. */
+            boolean hasPassword) {
 
         public static UserResponse from(User user) {
             return new UserResponse(
@@ -82,7 +84,8 @@ public final class AuthDtos {
                     user.getRole(),
                     user.isEmailVerified(),
                     user.getRegion(),
-                    user.getLanguage());
+                    user.getLanguage(),
+                    user.hasPassword());
         }
     }
 
