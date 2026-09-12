@@ -43,6 +43,9 @@ class MessageServiceTest {
     @Mock
     private UserRepository users;
 
+    @Mock
+    private com.gameteams.block.BlockService blocks;
+
     @InjectMocks
     private MessageService messageService;
 

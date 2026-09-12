@@ -14,6 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.gameteams.channel.Channel;
 import com.gameteams.channel.ChannelService;
+import com.gameteams.block.BlockService;
 import com.gameteams.common.ApiException;
 import com.gameteams.dm.DmConversation;
 import com.gameteams.dm.DmService;
@@ -32,9 +33,12 @@ public class MessageService {
     private final DmService dmService;
     private final UserRepository users;
     private final AttachmentStorage attachments;
+    private final BlockService blocks;
 
     MessageService(MessageRepository messages, ChannelService channelService,
-            DmService dmService, UserRepository users, AttachmentStorage attachments) {
+            DmService dmService, UserRepository users, AttachmentStorage attachments,
+            BlockService blocks) {
+        this.blocks = blocks;
         this.messages = messages;
         this.channelService = channelService;
         this.dmService = dmService;
@@ -232,6 +236,17 @@ public class MessageService {
     public MessageResponse sendDirect(UUID conversationId, UUID userId, String content,
             UUID replyToId) {
         DmConversation conversation = dmService.requireParticipant(conversationId, userId);
+
+        // Engel iki yonlu: engelleyen de engellenen de bu sohbete yazamaz.
+        UUID otherId = conversation.otherThan(userId).getId();
+        if (blocks.hasBlocked(userId, otherId)) {
+            throw ApiException.forbidden("USER_BLOCKED",
+                    "Bu kullanıcıyı engelledin. Mesaj göndermek için önce engeli kaldır.");
+        }
+        if (blocks.hasBlocked(otherId, userId)) {
+            // Engellendigi acikca soylenmez.
+            throw ApiException.forbidden("MESSAGE_NOT_DELIVERED", "Mesaj gönderilemedi.");
+        }
 
         String trimmed = content.strip();
         if (trimmed.isEmpty()) {

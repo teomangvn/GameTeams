@@ -7,6 +7,7 @@ import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.gameteams.block.UserBlockRepository;
 import com.gameteams.common.ApiException;
 import com.gameteams.dm.DmDtos.ConversationSummary;
 import com.gameteams.friend.FriendService;
@@ -24,14 +25,17 @@ public class DmService {
     private final UserRepository users;
     private final FriendService friendService;
     private final PresenceService presence;
+    private final UserBlockRepository blocks;
 
     DmService(DmConversationRepository conversations, MessageRepository messages,
-            UserRepository users, FriendService friendService, PresenceService presence) {
+            UserRepository users, FriendService friendService, PresenceService presence,
+            UserBlockRepository blocks) {
         this.conversations = conversations;
         this.messages = messages;
         this.users = users;
         this.friendService = friendService;
         this.presence = presence;
+        this.blocks = blocks;
     }
 
     /**
@@ -106,6 +110,7 @@ public class DmService {
                 other.getAvatarUrl(),
                 presence.isOnline(other.getId()),
                 last,
-                conversation.getCreatedAt());
+                conversation.getCreatedAt(),
+                blocks.hasBlocked(userId, other.getId()));
     }
 }

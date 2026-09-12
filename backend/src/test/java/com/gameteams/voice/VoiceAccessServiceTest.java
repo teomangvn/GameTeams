@@ -32,6 +32,9 @@ class VoiceAccessServiceTest {
     @Mock
     private DmService dmService;
 
+    @Mock
+    private com.gameteams.block.BlockService blocks;
+
     @InjectMocks
     private VoiceAccessService access;
 
@@ -70,12 +73,35 @@ class VoiceAccessServiceTest {
                 .thenThrow(ApiException.notFound("CHANNEL_NOT_FOUND", "Kanal bulunamadi."));
         DmConversation conversation = mock(DmConversation.class);
         when(conversation.getId()).thenReturn(spaceId);
+        when(conversation.otherThan(userId)).thenReturn(other());
         when(dmService.requireParticipant(spaceId, userId)).thenReturn(conversation);
 
         var space = access.requireAccess(spaceId, userId);
 
         assertThat(space.userLimit()).isEqualTo(2);
         assertThat(space.directCall()).isTrue();
+    }
+
+    /** Engelledikten sonra ne arama alanina girilir ne de oradaki ses dinlenir. */
+    @Test
+    void engel_varsa_aramaya_girilemez() {
+        when(channelService.requireAccessibleChannel(spaceId, userId))
+                .thenThrow(ApiException.notFound("CHANNEL_NOT_FOUND", "Kanal bulunamadi."));
+        DmConversation conversation = mock(DmConversation.class);
+        com.gameteams.user.User other = other();
+        when(conversation.otherThan(userId)).thenReturn(other);
+        when(dmService.requireParticipant(spaceId, userId)).thenReturn(conversation);
+        when(blocks.isBlockedEitherWay(userId, other.getId())).thenReturn(true);
+
+        assertThatThrownBy(() -> access.requireAccess(spaceId, userId))
+                .isInstanceOf(ApiException.class)
+                .extracting("code").isEqualTo("CALL_NOT_AVAILABLE");
+    }
+
+    private static com.gameteams.user.User other() {
+        var user = new com.gameteams.user.User("other", "Other", "o@example.com", "hash");
+        org.springframework.test.util.ReflectionTestUtils.setField(user, "id", UUID.randomUUID());
+        return user;
     }
 
     /** Sohbetin tarafi olmayan biri aramaya katilamaz veya dinleyemez. */

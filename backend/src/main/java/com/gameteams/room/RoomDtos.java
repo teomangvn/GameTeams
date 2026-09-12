@@ -71,16 +71,33 @@ public final class RoomDtos {
     }
 
     /**
-     * /topic/room.{roomId} uzerinden yayinlanan olaylar.
-     *
-     * Su an yalnizca presence: uye listesindeki cevrimici gostergesi eskiden
-     * periyodik yoklamayla tazeleniyordu, artik degisiklik aninda yayiliyor.
+     * /topic/room.{roomId} uzerinden yayinlanan olaylar: cevrimici durumu ve
+     * uyelik degisiklikleri. ROOM_DELETED'da userId bostur.
      */
     public record RoomEvent(String type, UUID userId, boolean online) {
 
         public static RoomEvent presence(UUID userId, boolean online) {
             return new RoomEvent("PRESENCE_UPDATE", userId, online);
         }
+
+        public static RoomEvent memberLeft(UUID userId) {
+            return new RoomEvent("MEMBER_LEFT", userId, false);
+        }
+
+        public static RoomEvent memberRemoved(UUID userId) {
+            return new RoomEvent("MEMBER_REMOVED", userId, false);
+        }
+
+        public static RoomEvent roomDeleted() {
+            return new RoomEvent("ROOM_DELETED", null, false);
+        }
+    }
+
+    /**
+     * /user/queue/rooms: kullanicinin kendisini etkileyen oda degisikligi
+     * (odadan cikarildi, oda silindi). Kullanici o odaya bakmasa da ulasir.
+     */
+    public record RoomNotice(String type, UUID roomId, String roomName) {
     }
 
     public record MemberResponse(

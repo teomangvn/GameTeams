@@ -10,6 +10,7 @@ import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
+import com.gameteams.block.BlockService;
 import com.gameteams.common.ApiException;
 import com.gameteams.common.RateLimiter;
 import com.gameteams.config.StompPrincipal;
@@ -37,9 +38,11 @@ public class CallSocketController {
     private final PresenceService presence;
     private final RateLimiter rateLimiter;
     private final SimpMessagingTemplate broker;
+    private final BlockService blocks;
 
     CallSocketController(DmService dmService, PresenceService presence, RateLimiter rateLimiter,
-            SimpMessagingTemplate broker) {
+            SimpMessagingTemplate broker, BlockService blocks) {
+        this.blocks = blocks;
         this.dmService = dmService;
         this.presence = presence;
         this.rateLimiter = rateLimiter;
@@ -58,7 +61,10 @@ public class CallSocketController {
             User caller = self(conversation, principal.userId());
             User callee = conversation.otherThan(principal.userId());
 
-            if (!presence.isOnline(callee.getId())) {
+            // Engel varsa caldirmak yok; arayana cevrimdisi gibi gorunur ki
+            // engellendigi anlasilmasin.
+            if (blocks.isBlockedEitherWay(caller.getId(), callee.getId())
+                    || !presence.isOnline(callee.getId())) {
                 send(caller.getId(), CallEvent.of("UNAVAILABLE", conversationId, callee));
                 return;
             }
