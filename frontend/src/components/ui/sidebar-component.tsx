@@ -318,20 +318,43 @@ function MenuItem({
   onToggle?: () => void;
 }) {
   const hasChildren = Boolean(item.children?.length);
+  // Hem eylemi hem alt listesi olan oge (katilimcilari gorunen ses kanali):
+  // satira tiklamak eylemi calistirir, ok ayri bir butonla listeyi acar/kapar.
+  // Onceden alt oge varken tiklama yalnizca listeyi aciyordu; bagli olunan
+  // ses kanalina tiklayip izgaraya donmek bu yuzden hic calismiyordu.
+  const splitToggle = hasChildren && Boolean(item.onSelect) && Boolean(onToggle);
 
   const handleClick = () => {
-    if (hasChildren && onToggle) onToggle();
-    else item.onSelect?.();
+    if (splitToggle) {
+      item.onSelect?.();
+      if (!isExpanded) onToggle?.();
+    } else if (hasChildren && onToggle) {
+      onToggle();
+    } else {
+      item.onSelect?.();
+    }
   };
 
+  const chevron = (
+    <ChevronDownIcon
+      size={16}
+      className="text-neutral-50 transition-transform duration-500"
+      style={{
+        ...springStyle,
+        transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
+      }}
+    />
+  );
+
   return (
-    <div className="relative shrink-0 w-full">
+    <div className="relative shrink-0 w-full flex items-center">
       <button
         type="button"
         onClick={handleClick}
-        aria-expanded={hasChildren ? isExpanded : undefined}
+        aria-expanded={hasChildren && !splitToggle ? isExpanded : undefined}
         className={cn(
           "rounded-lg cursor-pointer transition-colors flex items-center relative text-left w-full h-10 px-4 py-2",
+          splitToggle && "pr-11",
           item.isActive ? "bg-neutral-800" : "hover:bg-neutral-800",
         )}
       >
@@ -349,19 +372,22 @@ function MenuItem({
           </span>
         )}
 
-        {hasChildren && (
-          <div className="flex items-center justify-center shrink-0 ml-2">
-            <ChevronDownIcon
-              size={16}
-              className="text-neutral-50 transition-transform duration-500"
-              style={{
-                ...springStyle,
-                transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
-              }}
-            />
-          </div>
+        {hasChildren && !splitToggle && (
+          <div className="flex items-center justify-center shrink-0 ml-2">{chevron}</div>
         )}
       </button>
+
+      {splitToggle && (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={isExpanded}
+          aria-label={isExpanded ? "Listeyi gizle" : "Listeyi göster"}
+          className="absolute right-1 size-8 rounded-md flex items-center justify-center hover:bg-neutral-700 transition-colors"
+        >
+          {chevron}
+        </button>
+      )}
     </div>
   );
 }

@@ -28,6 +28,7 @@ import { useMatchmaking } from "@/features/matchmaking/useMatchmaking";
 import { useVoice } from "@/features/voice/VoiceSessionProvider";
 import VoiceGrid from "@/features/voice/VoiceGrid";
 import AppBackground from "@/features/shell/AppBackground";
+import SettingsIsland, { type SettingsTab } from "@/features/settings/SettingsIsland";
 
 /**
  * Uygulama kabugu: ray + kanal paneli + icerik + uye listesi.
@@ -45,6 +46,9 @@ export function AppShell() {
   const [roomDialogOpen, setRoomDialogOpen] = useState(false);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [prompt, setPrompt] = useState<"channel" | "friend" | null>(null);
+  /** Acik ayar penceresi; null ise kapali. */
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
+  const closeSettings = useCallback(() => setSettingsTab(null), []);
   /** Ses izgarasinin yanindaki kanal sohbeti acik mi. */
   const [voiceChatOpen, setVoiceChatOpen] = useState(false);
 
@@ -215,6 +219,7 @@ export function AppShell() {
           onToggleCamera={voice.toggleCamera}
           voiceViewOpen={voiceViewOpen}
           onOpenVoiceView={handleOpenVoiceView}
+          onOpenSettings={setSettingsTab}
           onDisconnectVoice={voice.disconnect}
         />
 
@@ -293,6 +298,8 @@ export function AppShell() {
           matchmaking.dismissMatch();
         }}
       />
+
+      <SettingsIsland tab={settingsTab} onTabChange={setSettingsTab} onClose={closeSettings} />
 
       <RoomDialog
         open={roomDialogOpen}

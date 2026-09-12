@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Play, Video, VideoOff } from "@carbon/icons-react";
+import { ArrowLeft, Headphones, Play, Stop, Video, VideoOff } from "@carbon/icons-react";
 
 import {
   describeCameraError,
   describeMicrophoneError,
   isSecureMediaContext,
 } from "@/features/voice/mediaErrors";
+import { useVoice } from "@/features/voice/VoiceSessionProvider";
+import { MicrophoneProcessor } from "@/lib/audio/microphoneProcessor";
 import { cn } from "@/lib/utils";
 import {
-  audioConstraints,
+  VOICE_GATE_MAX_DB,
+  VOICE_GATE_MIN_DB,
+  type NoiseSuppressionMode,
   useMediaSettingsStore,
   videoConstraints,
 } from "@/stores/mediaSettingsStore";
@@ -20,8 +24,11 @@ import {
  * Her aygitin yaninda kendi testi var: bir aygiti secmek ancak calistigini
  * gorebiliyorsan ise yarar. Aygit adlari yalnizca kullanici bir kez izin
  * verdikten sonra okunabilir; izin yoksa tarayici bos etiket dondurur.
+ *
+ * `embedded` ile uygulama icindeki ayar penceresinde, sayfa cercevesi ve
+ * "Uygulamaya don" baglantisi olmadan gosterilir.
  */
-export function DeviceSettingsPage() {
+export function DeviceSettingsPage({ embedded = false }: { embedded?: boolean }) {
   const settings = useMediaSettingsStore();
   const update = useMediaSettingsStore((s) => s.set);
 
@@ -41,9 +48,13 @@ export function DeviceSettingsPage() {
     let cancelled = false;
     void (async () => {
       try {
-        // Yalnizca etiketleri acmak icin: akis hemen kapatilir.
-        const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
-        for (const track of probe.getTracks()) track.stop();
+        // Izin zaten verilmisse etiketler okunur; gereksiz ikinci bir mikrofon
+        // acmak ses kanalindaki mikrofonu kisa sure etkileyebiliyordu.
+        const known = await navigator.mediaDevices.enumerateDevices();
+        if (!known.some((device) => device.kind === "audioinput" && device.label)) {
+          const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+          for (const track of probe.getTracks()) track.stop();
+        }
         if (!cancelled) await refresh();
       } catch (error) {
         if (!cancelled) setPermissionError(describeMicrophoneError(error));
@@ -62,18 +73,22 @@ export function DeviceSettingsPage() {
     typeof HTMLMediaElement !== "undefined" && "setSinkId" in HTMLMediaElement.prototype;
 
   return (
-    <div className="min-h-screen bg-[#1a1a1a] p-4 sm:p-8">
-      <div className="mx-auto max-w-2xl">
-        <Link
-          to="/"
-          className="inline-flex items-center gap-2 font-lexend text-[13px] text-neutral-400 hover:text-neutral-200"
-        >
-          <ArrowLeft size={16} /> Uygulamaya dön
-        </Link>
+    <div className={embedded ? undefined : "min-h-screen bg-[#1a1a1a] p-4 sm:p-8"}>
+      <div className={embedded ? undefined : "mx-auto max-w-2xl"}>
+        {!embedded && (
+          <>
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 font-lexend text-[13px] text-neutral-400 hover:text-neutral-200"
+            >
+              <ArrowLeft size={16} /> Uygulamaya dön
+            </Link>
 
-        <h1 className="font-lexend font-semibold text-[24px] text-neutral-50 mt-4">
-          Ses ve görüntü
-        </h1>
+            <h1 className="font-lexend font-semibold text-[24px] text-neutral-50 mt-4">
+              Ses ve görüntü
+            </h1>
+          </>
+        )}
 
         {permissionError && (
           <div
@@ -92,6 +107,63 @@ export function DeviceSettingsPage() {
             onChange={(microphoneId) => update({ microphoneId })}
           />
           <MicrophoneTest />
+        </Card>
+
+        <Card
+          title="Mikrofon işleme"
+          description="Değişiklikler ses kanalındayken de anında uygulanır. Etkisini duymak için yukarıdaki testte “Kendimi dinle”yi aç."
+        >
+          <div>
+            <span className="block font-lexend text-[14px] text-neutral-50">Gürültü engelleme</span>
+            <NoiseModeSelector
+              value={settings.noiseSuppression}
+              onChange={(noiseSuppression) => update({ noiseSuppression })}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <Toggle
+              label="Ses eşiği"
+              description="Sesin eşiğin altındayken mikrofon tamamen susar; konuşma aralarındaki klavye ve nefes sesleri gitmez. Eşiği testteki çubukla ayarla."
+              checked={settings.voiceGate}
+              onChange={(voiceGate) => update({ voiceGate })}
+            />
+            {settings.voiceGate && (
+              <label className="block pl-12 pb-2">
+                <span className="flex items-center justify-between font-lexend text-[12px] text-neutral-400 mb-1.5">
+                  <span>Eşik</span>
+                  <span className="tabular-nums text-neutral-200">
+                    {settings.voiceGateThreshold} dB
+                  </span>
+                </span>
+                <input
+                  type="range"
+                  min={VOICE_GATE_MIN_DB}
+                  max={VOICE_GATE_MAX_DB}
+                  step={1}
+                  value={settings.voiceGateThreshold}
+                  onChange={(event) => update({ voiceGateThreshold: Number(event.target.value) })}
+                  className="w-full accent-emerald-500 cursor-pointer"
+                />
+                <span className="flex justify-between font-lexend text-[11px] text-neutral-500 mt-0.5">
+                  <span>Hassas</span>
+                  <span>Yalnızca yüksek ses</span>
+                </span>
+              </label>
+            )}
+            <Toggle
+              label="Yankı engelleme"
+              description="Hoparlörden çıkan sesin mikrofona geri dönmesini önler."
+              checked={settings.echoCancellation}
+              onChange={(echoCancellation) => update({ echoCancellation })}
+            />
+            <Toggle
+              label="Otomatik ses seviyesi"
+              description="Sesini uzaklaştıkça yükseltir, yaklaştıkça kısar."
+              checked={settings.autoGainControl}
+              onChange={(autoGainControl) => update({ autoGainControl })}
+            />
+          </div>
         </Card>
 
         <Card title="Hoparlör">
@@ -118,32 +190,6 @@ export function DeviceSettingsPage() {
             onChange={(cameraId) => update({ cameraId })}
           />
           <CameraTest />
-        </Card>
-
-        <Card
-          title="Mikrofon işleme"
-          description="Değişiklikler ses kanalındayken de anında uygulanır."
-        >
-          <div className="flex flex-col gap-1">
-            <Toggle
-              label="Gürültü engelleme"
-              description="Klavye, fan ve ortam uğultusunu bastırır."
-              checked={settings.noiseSuppression}
-              onChange={(noiseSuppression) => update({ noiseSuppression })}
-            />
-            <Toggle
-              label="Yankı engelleme"
-              description="Hoparlörden çıkan sesin mikrofona geri dönmesini önler."
-              checked={settings.echoCancellation}
-              onChange={(echoCancellation) => update({ echoCancellation })}
-            />
-            <Toggle
-              label="Otomatik ses seviyesi"
-              description="Sesini uzaklaştıkça yükseltir, yaklaştıkça kısar."
-              checked={settings.autoGainControl}
-              onChange={(autoGainControl) => update({ autoGainControl })}
-            />
-          </div>
         </Card>
       </div>
     </div>
@@ -205,6 +251,68 @@ function DeviceSelect({
         ))}
       </select>
     </label>
+  );
+}
+
+const NOISE_MODES: Array<{ value: NoiseSuppressionMode; label: string; description: string }> = [
+  {
+    value: "off",
+    label: "Kapalı",
+    description: "Ses işlenmeden gönderilir. Sessiz bir odada veya stüdyo mikrofonunda en doğal ses.",
+  },
+  {
+    value: "standard",
+    label: "Standart",
+    description: "Tarayıcının engelleyicisi. Fan ve uğultu gibi sabit gürültüyü azaltır; klavye gibi ani seslerde zayıftır.",
+  },
+  {
+    value: "enhanced",
+    label: "Gelişmiş",
+    description: "Yapay zekâ (RNNoise) cihazında çalışır. Klavye, fare tıklaması, köpek, trafik gibi ani sesleri de bastırır.",
+  },
+];
+
+function NoiseModeSelector({
+  value,
+  onChange,
+}: {
+  value: NoiseSuppressionMode;
+  onChange: (mode: NoiseSuppressionMode) => void;
+}) {
+  const active = NOISE_MODES.find((mode) => mode.value === value) ?? NOISE_MODES[2];
+
+  return (
+    <div className="mt-2">
+      <div
+        role="radiogroup"
+        aria-label="Gürültü engelleme"
+        className="grid grid-cols-3 gap-1 rounded-lg bg-neutral-950 border border-neutral-800 p-1"
+      >
+        {NOISE_MODES.map((mode) => (
+          <button
+            key={mode.value}
+            type="button"
+            role="radio"
+            aria-checked={mode.value === value}
+            onClick={() => onChange(mode.value)}
+            className={cn(
+              "h-8 rounded-md font-lexend text-[13px] transition-colors",
+              mode.value === value
+                ? "bg-emerald-500/15 text-emerald-300"
+                : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100",
+            )}
+          >
+            {mode.label}
+            {mode.value === "enhanced" && mode.value !== value && (
+              <span className="ml-1 text-[11px] text-emerald-400/80">önerilen</span>
+            )}
+          </button>
+        ))}
+      </div>
+      <span className="block font-lexend text-[12px] text-neutral-500 leading-relaxed mt-1.5">
+        {active.description}
+      </span>
+    </div>
   );
 }
 
@@ -277,91 +385,218 @@ function Toggle({
 
 /* ------------------------------- Testler -------------------------------- */
 
+/** Olcerin gosterdigi aralik (dBFS). */
+const METER_MIN_DB = -80;
+const METER_MAX_DB = 0;
+
+function dbToFraction(db: number): number {
+  return Math.min(1, Math.max(0, (db - METER_MIN_DB) / (METER_MAX_DB - METER_MIN_DB)));
+}
+
+/** setSinkId henuz her tarayicida yok ve TS tipi de tanimli degil. */
+type AudioElementWithSink = HTMLAudioElement & {
+  setSinkId?: (deviceId: string) => Promise<void>;
+};
+
 /**
- * Mikrofon testi: secili aygitin canli seviyesi. Sessiz duran bir cubuk
- * yanlis aygiti hemen ele verir.
+ * Mikrofon testi: islenmis sesin canli seviyesi ve istege bagli kendini dinleme.
+ *
+ * Ses kanalindayken ayri bir mikrofon ACILMAZ; kanaldaki mikrofon olculur.
+ * Ayni aygitta ikinci bir yakalama Chrome'da kanaldaki mikrofonun isleme
+ * ayarlarini bozabiliyor, ayrica olculen ses tam olarak karsiya gidenle ayni
+ * oluyor. Kanalda degilken test kendi mikrofonunu ayni isleme hattiyla acar.
  */
 function MicrophoneTest() {
   const microphoneId = useMediaSettingsStore((s) => s.microphoneId);
   const noiseSuppression = useMediaSettingsStore((s) => s.noiseSuppression);
   const echoCancellation = useMediaSettingsStore((s) => s.echoCancellation);
   const autoGainControl = useMediaSettingsStore((s) => s.autoGainControl);
+  const voiceGate = useMediaSettingsStore((s) => s.voiceGate);
+  const voiceGateThreshold = useMediaSettingsStore((s) => s.voiceGateThreshold);
+  const speakerId = useMediaSettingsStore((s) => s.speakerId);
 
-  const [level, setLevel] = useState(0);
-  const [failed, setFailed] = useState(false);
-  const frameRef = useRef<number | undefined>(undefined);
+  const voice = useVoice();
+  const sessionMicrophone = voice.session?.microphone ?? null;
+  const sessionMuted = voice.session?.muted ?? false;
 
+  const [ownMicrophone, setOwnMicrophone] = useState<MicrophoneProcessor | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [listening, setListening] = useState(false);
+  const [levelDb, setLevelDb] = useState(-Infinity);
+
+  const microphone = sessionMicrophone ?? ownMicrophone;
+
+  // Kanalda degilken testin kendi mikrofonu.
   useEffect(() => {
-    if (!isSecureMediaContext()) return;
+    if (sessionMicrophone || !isSecureMediaContext()) return;
 
-    let stream: MediaStream | null = null;
-    let context: AudioContext | null = null;
     let cancelled = false;
-    setFailed(false);
+    let opened: MicrophoneProcessor | null = null;
+    setFailed(null);
 
     void (async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: audioConstraints(useMediaSettingsStore.getState()),
-        });
+        opened = await MicrophoneProcessor.open(useMediaSettingsStore.getState());
         if (cancelled) {
-          for (const track of stream.getTracks()) track.stop();
+          opened.dispose();
           return;
         }
-
-        context = new AudioContext();
-        const analyser = context.createAnalyser();
-        analyser.fftSize = 512;
-        context.createMediaStreamSource(stream).connect(analyser);
-
-        const buffer = new Uint8Array(analyser.fftSize);
-        const tick = () => {
-          analyser.getByteTimeDomainData(buffer);
-          let sum = 0;
-          for (const sample of buffer) {
-            const centered = (sample - 128) / 128;
-            sum += centered * centered;
-          }
-          // 0..1 araligina yay; konusma tipik olarak 0.05-0.3 RMS uretir.
-          setLevel(Math.min(1, Math.sqrt(sum / buffer.length) * 4));
-          frameRef.current = requestAnimationFrame(tick);
-        };
-        frameRef.current = requestAnimationFrame(tick);
-      } catch {
-        if (!cancelled) setFailed(true);
+        setOwnMicrophone(opened);
+      } catch (error) {
+        if (!cancelled) setFailed(describeMicrophoneError(error));
       }
     })();
 
     return () => {
       cancelled = true;
-      if (frameRef.current !== undefined) cancelAnimationFrame(frameRef.current);
-      for (const track of stream?.getTracks() ?? []) track.stop();
+      // Ayni aygitta yeni ayarlarla acmadan once eskisi kapanmali.
+      opened?.dispose();
+      setOwnMicrophone(null);
+    };
+  }, [sessionMicrophone, microphoneId, noiseSuppression, echoCancellation, autoGainControl]);
+
+  // Esik mikrofonu yeniden acmadan uygulanir.
+  useEffect(() => {
+    ownMicrophone?.updateGate({ voiceGate, voiceGateThreshold });
+  }, [ownMicrophone, voiceGate, voiceGateThreshold]);
+
+  // Seviye olcumu. Isleme grafi kurulamadiysa akisin kendisi olculur.
+  useEffect(() => {
+    if (!microphone) return;
+
+    let context: AudioContext | null = null;
+    let read = () => microphone.readInputLevelDb();
+
+    if (microphone.readInputLevelDb() === null) {
+      try {
+        context = new AudioContext();
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 1024;
+        context.createMediaStreamSource(microphone.stream).connect(analyser);
+        const buffer = new Float32Array(analyser.fftSize);
+        read = () => {
+          analyser.getFloatTimeDomainData(buffer);
+          let sum = 0;
+          for (const sample of buffer) sum += sample * sample;
+          const rms = Math.sqrt(sum / buffer.length);
+          return rms > 0 ? 20 * Math.log10(rms) : -Infinity;
+        };
+      } catch {
+        return;
+      }
+    }
+
+    let frame = 0;
+    let smoothed = -Infinity;
+    const tick = () => {
+      const db = read() ?? -Infinity;
+      // Hizli yukselis, yavas dusus: cubuk titremesin ama tepeler kacmasin.
+      smoothed = db > smoothed ? db : smoothed - 0.8;
+      setLevelDb(Math.max(smoothed, METER_MIN_DB));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(frame);
       void context?.close().catch(() => undefined);
     };
-  }, [microphoneId, noiseSuppression, echoCancellation, autoGainControl]);
+  }, [microphone]);
+
+  const gateOpen = !voiceGate || levelDb >= voiceGateThreshold;
+  const level = dbToFraction(levelDb);
 
   return (
     <div>
       <span className="block font-lexend text-[13px] text-neutral-300 mb-2">
         Mikrofon testi
       </span>
+
       {failed ? (
-        <span className="font-lexend text-[12px] text-neutral-500">Mikrofona erişilemedi.</span>
+        <span className="font-lexend text-[12px] text-red-400">{failed}</span>
       ) : (
         <>
-          <div className="h-2 w-full rounded-full bg-neutral-900 overflow-hidden">
+          <div className="relative h-2.5 w-full rounded-full bg-neutral-900 overflow-hidden">
             <div
-              className="h-full bg-emerald-500 transition-[width] duration-75"
+              className={cn(
+                "h-full transition-[width] duration-75",
+                gateOpen ? "bg-emerald-500" : "bg-neutral-600",
+              )}
               style={{ width: `${Math.round(level * 100)}%` }}
             />
+            {voiceGate && (
+              <div
+                aria-hidden="true"
+                className="absolute inset-y-0 w-0.5 bg-amber-400"
+                style={{ left: `${dbToFraction(voiceGateThreshold) * 100}%` }}
+              />
+            )}
           </div>
-          <span className="block font-lexend text-[12px] text-neutral-500 mt-1.5">
-            Konuş; çubuk hareket etmiyorsa yanlış aygıt seçili olabilir.
+
+          <span className="block font-lexend text-[12px] text-neutral-500 mt-1.5 leading-relaxed">
+            {voiceGate
+              ? "Konuşurken çubuk sarı çizgiyi geçmeli, sessizken altında kalmalı. Gri kısım karşıya gitmez."
+              : "Konuş; çubuk hareket etmiyorsa yanlış aygıt seçili olabilir."}
           </span>
+
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <TestButton onClick={() => setListening((value) => !value)} active={listening}>
+              {listening ? <Stop size={16} /> : <Headphones size={16} />}
+              {listening ? "Dinlemeyi durdur" : "Kendimi dinle"}
+            </TestButton>
+            <MicrophoneStatus microphone={microphone} />
+          </div>
+
+          {listening && (
+            <span className="block font-lexend text-[12px] text-amber-300/90 mt-2 leading-relaxed">
+              Kulaklık kullan; hoparlörden dinlersen ses mikrofona geri döner.
+              {sessionMicrophone && sessionMuted && " Ses kanalında mikrofonun kapalı olduğu için sessizlik duyarsın."}
+            </span>
+          )}
+
+          {listening && microphone && (
+            <Loopback stream={microphone.stream} speakerId={speakerId} />
+          )}
         </>
       )}
     </div>
   );
+}
+
+function MicrophoneStatus({ microphone }: { microphone: MicrophoneProcessor | null }) {
+  const mode = useMediaSettingsStore((s) => s.noiseSuppression);
+  if (!microphone) return null;
+
+  if (microphone.warning) {
+    return <span className="font-lexend text-[12px] text-amber-300">{microphone.warning}</span>;
+  }
+  if (mode === "enhanced" && microphone.enhancedActive) {
+    return (
+      <span className="font-lexend text-[12px] text-emerald-400">
+        Gelişmiş gürültü engelleme etkin
+      </span>
+    );
+  }
+  return null;
+}
+
+/** Islenmis mikrofon sesini secili cikisa calar; karsinin duyacagini duyarsin. */
+function Loopback({ stream, speakerId }: { stream: MediaStream; speakerId: string }) {
+  const ref = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    const element = ref.current as AudioElementWithSink | null;
+    if (!element) return;
+    element.srcObject = stream;
+    if (speakerId && element.setSinkId) void element.setSinkId(speakerId).catch(() => undefined);
+    void element.play().catch(() => undefined);
+    return () => {
+      element.pause();
+      element.srcObject = null;
+    };
+  }, [stream, speakerId]);
+
+  return <audio ref={ref} autoPlay playsInline className="hidden" />;
 }
 
 /** setSinkId henuz her tarayicida yok ve AudioContext tipinde tanimli degil. */

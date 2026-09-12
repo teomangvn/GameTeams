@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { voiceApi, type SignalMessage, type VoiceEvent, type VoiceParticipant } from "@/api/voice";
+import { MicrophoneProcessor } from "@/lib/audio/microphoneProcessor";
 import { PeerManager } from "@/lib/webrtc/peerManager";
 import {
   describeCameraError,
@@ -11,11 +12,7 @@ import {
 import { onConnectionChange, publish, subscribe } from "@/lib/stompClient";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
-import {
-  audioConstraints,
-  useMediaSettingsStore,
-  videoConstraints,
-} from "@/stores/mediaSettingsStore";
+import { useMediaSettingsStore, videoConstraints } from "@/stores/mediaSettingsStore";
 
 export interface VoiceSession {
   channelId: string;
@@ -32,8 +29,10 @@ export interface VoiceSession {
   /** Kendi onizlemeleri; izgarada kendi karelerinde gosterilir. */
   localCamera: MediaStream | null;
   localScreen: MediaStream | null;
-  /** Kendi mikrofon akisi; konusma gostergesi bunun seviyesini olcer. */
+  /** Kendi mikrofon akisi (islenmis); konusma gostergesi bunun seviyesini olcer. */
   localAudio: MediaStream | null;
+  /** Mikrofon isleme hatti; ayarlar sayfasi seviye olcer ve kendini dinletir. */
+  microphone: MicrophoneProcessor | null;
 }
 
 /**
@@ -114,8 +113,15 @@ export function useVoiceSession() {
   const peersRef = useRef<PeerManager | null>(null);
   const channelIdRef = useRef<string | null>(null);
   const unsubscribeRef = useRef<Array<() => void>>([]);
-  /** Mikrofonun hangi ayarlarla kuruldugu; gereksiz yeniden kurmayi onler. */
-  const appliedAudioRef = useRef<string | null>(null);
+  /** Acik mikrofon ve isleme hatti; ayar degisiminde degistirilir. */
+  const micRef = useRef<MicrophoneProcessor | null>(null);
+  /**
+   * Mikrofon degisimleri sirayla uygulanir. Hizli ard arda ayar degisiminde
+   * iki acma islemi yarisip birbirinin mikrofonunu kapatabiliyordu.
+   */
+  const micQueueRef = useRef<Promise<void>>(Promise.resolve());
+  /** Ayni isleme uyarisini her ayar degisiminde tekrar gostermemek icin. */
+  const lastMicWarningRef = useRef<string | null>(null);
   /** Efektlerin guncel oturuma erisebilmesi icin; state'e bagimlilik kurmadan. */
   const sessionRef = useRef<VoiceSession | null>(null);
   /** Baglanti bir kez koptu mu; ilk baglantida yeniden katilma yapilmasin. */
@@ -132,6 +138,8 @@ export function useVoiceSession() {
   const noiseSuppression = useMediaSettingsStore((s) => s.noiseSuppression);
   const echoCancellation = useMediaSettingsStore((s) => s.echoCancellation);
   const autoGainControl = useMediaSettingsStore((s) => s.autoGainControl);
+  const voiceGate = useMediaSettingsStore((s) => s.voiceGate);
+  const voiceGateThreshold = useMediaSettingsStore((s) => s.voiceGateThreshold);
 
   const patch = useCallback((update: Partial<VoiceSession>) => {
     setSession((current) => (current ? { ...current, ...update } : current));
@@ -142,8 +150,9 @@ export function useVoiceSession() {
     unsubscribeRef.current = [];
     peersRef.current?.closeAll();
     peersRef.current = null;
+    micRef.current?.dispose();
+    micRef.current = null;
     channelIdRef.current = null;
-    appliedAudioRef.current = null;
   }, []);
 
   const disconnect = useCallback(() => {
@@ -246,41 +255,91 @@ export function useVoiceSession() {
     return () => clearInterval(interval);
   }, [session?.channelId, selfUserId, patch]);
 
+  const reportMicWarning = useCallback((processor: MicrophoneProcessor) => {
+    if (processor.warning && processor.warning !== lastMicWarningRef.current) {
+      toast.error(processor.warning);
+    }
+    lastMicWarningRef.current = processor.warning;
+  }, []);
+
   /**
    * Aygit veya isleme ayari degisince canli baglantidaki mikrofonu degistir.
-   * replaceTrack yeniden pazarlik gerektirmedigi icin konusma kesilmez.
+   *
+   * Ses esigi mikrofonu yeniden acmadan uygulanir. Diger ayarlar yeni bir
+   * getUserMedia gerektirir; replaceTrack yeniden pazarlik istemedigi icin
+   * baglanti kopmaz.
+   *
+   * Onceki surumde yeni mikrofon, eskisi hala acikken isteniyordu. Chrome ayni
+   * aygitta tek bir isleme ayari tutabiliyor: ikinci istek eski ayarlari miras
+   * aliyor ve gurultu engelleme anahtari fiilen hicbir sey degistirmiyordu.
+   * Ayni aygitta artik once eski mikrofon kapatiliyor (cok kisa bir sessizlik).
    */
   useEffect(() => {
-    const peers = peersRef.current;
-    if (!peers || !channelIdRef.current) return;
+    if (!peersRef.current) return;
 
-    const settings = useMediaSettingsStore.getState();
-    const signature = audioSignature(settings);
-    if (appliedAudioRef.current === signature) return;
-    appliedAudioRef.current = signature;
+    micQueueRef.current = micQueueRef.current
+      .then(async () => {
+        const peers = peersRef.current;
+        if (!peers) return;
+        // current null olabilir: onceki degisimde yeni mikrofon acilamadiysa
+        // bir sonraki ayar degisikligi yeniden denemeli, sessizce atlamamali.
+        const current = micRef.current;
 
-    let cancelled = false;
-    void (async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: audioConstraints(settings),
-        });
-        const [track] = stream.getAudioTracks();
-        if (cancelled) {
-          track.stop();
+        const settings = useMediaSettingsStore.getState();
+        if (current?.matches(settings)) {
+          current.updateGate(settings);
           return;
         }
-        await peers.replaceAudioTrack(track);
-        patch({ localAudio: stream });
-      } catch (error) {
-        toast.error(describeMicrophoneError(error));
-      }
-    })();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [microphoneId, noiseSuppression, echoCancellation, autoGainControl, patch]);
+        // "Sistem varsayilani" secili aygitla ayni olabilir; emin olunamayinca ayni say.
+        const sameDevice =
+          !current ||
+          current.deviceId === settings.microphoneId ||
+          !current.deviceId ||
+          !settings.microphoneId;
+        if (current && sameDevice) {
+          current.dispose();
+          micRef.current = null;
+        }
+
+        let next: MicrophoneProcessor;
+        try {
+          next = await MicrophoneProcessor.open(settings);
+        } catch (error) {
+          toast.error(describeMicrophoneError(error));
+          return;
+        }
+
+        // Bu arada sesten ayrildiysa yeni mikrofon acik kalmasin.
+        if (peersRef.current !== peers) {
+          next.dispose();
+          return;
+        }
+
+        await peers.replaceAudioTrack(next.track);
+        if (peersRef.current !== peers) {
+          next.dispose();
+          return;
+        }
+        if (current && !sameDevice) current.dispose();
+        micRef.current = next;
+        reportMicWarning(next);
+        patch({ localAudio: next.stream, microphone: next });
+      })
+      // Zincir reddedilirse sonraki tum degisimler atlanirdi; hata burada biter.
+      .catch((error: unknown) => {
+        console.error("Mikrofon ayari uygulanamadi:", error);
+      });
+  }, [
+    microphoneId,
+    noiseSuppression,
+    echoCancellation,
+    autoGainControl,
+    voiceGate,
+    voiceGateThreshold,
+    patch,
+    reportMicWarning,
+  ]);
 
   const connect = useCallback(
     async (channelId: string, channelName: string, roomId: string, roomName: string) => {
@@ -314,25 +373,21 @@ export function useVoiceSession() {
         localCamera: null,
         localScreen: null,
         localAudio: null,
+        microphone: null,
       });
 
-      let micStream: MediaStream;
+      let mic: MicrophoneProcessor;
       try {
         if (!isSecureMediaContext()) {
           // navigator.mediaDevices tanimsiz; cagirmak TypeError firlatirdi.
           throw new Error("insecure-context");
         }
-        const settings = useMediaSettingsStore.getState();
-        micStream = await navigator.mediaDevices.getUserMedia({
-          audio: audioConstraints(settings),
-        });
+        mic = await MicrophoneProcessor.open(useMediaSettingsStore.getState());
         if (isStale()) {
           // Mikrofon izni beklenirken vazgecildi; acik kalirsa kayit isigi yanar.
-          stopTracks(micStream);
+          mic.dispose();
           return;
         }
-        // Asagidaki efekt ayni ayarlar icin mikrofonu bir daha kurmasin.
-        appliedAudioRef.current = audioSignature(settings);
       } catch (error) {
         // Yeni bir kanala gecildiyse onun oturumuna dokunma.
         if (isStale()) return;
@@ -349,16 +404,15 @@ export function useVoiceSession() {
         ({ iceServers } = await voiceApi.iceServers());
       } catch {
         // Onceden yakalanmiyordu: oturum "bagli" gorunup mikrofon acik kaliyordu.
-        stopTracks(micStream);
+        mic.dispose();
         if (isStale()) return;
         channelIdRef.current = null;
-        appliedAudioRef.current = null;
         setSession(null);
         toast.error("Ses sunucusu ayarları alınamadı. Tekrar dene.");
         return;
       }
       if (isStale()) {
-        stopTracks(micStream);
+        mic.dispose();
         return;
       }
 
@@ -389,9 +443,11 @@ export function useVoiceSession() {
           }
         },
       });
-      peers.setLocalStream(micStream);
+      peers.setLocalStream(mic.stream);
       peersRef.current = peers;
-      patch({ localAudio: micStream });
+      micRef.current = mic;
+      reportMicWarning(mic);
+      patch({ localAudio: mic.stream, microphone: mic });
 
       // Kanal olaylari
       unsubscribeRef.current.push(
@@ -471,7 +527,7 @@ export function useVoiceSession() {
       patch({ participants: others });
       for (const participant of others) void peers.addPeer(participant.userId);
     },
-    [selfUserId, disconnect, patch, teardown],
+    [selfUserId, disconnect, patch, teardown, reportMicWarning],
   );
 
   const pushState = useCallback(
@@ -605,21 +661,3 @@ function mergeStream(
   return { ...current, [userId]: new MediaStream([...existing.getTracks(), ...added]) };
 }
 
-function stopTracks(stream: MediaStream) {
-  for (const track of stream.getTracks()) track.stop();
-}
-
-/** Mikrofonun yeniden kurulmasini gerektiren ayarlarin imzasi. */
-function audioSignature(settings: {
-  microphoneId: string;
-  noiseSuppression: boolean;
-  echoCancellation: boolean;
-  autoGainControl: boolean;
-}): string {
-  return [
-    settings.microphoneId,
-    settings.noiseSuppression,
-    settings.echoCancellation,
-    settings.autoGainControl,
-  ].join("|");
-}

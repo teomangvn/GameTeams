@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { MAX_USER_VOLUME, useMediaSettingsStore } from "@/stores/mediaSettingsStore";
+import {
+  MAX_USER_VOLUME,
+  migrateMediaSettings,
+  useMediaSettingsStore,
+} from "@/stores/mediaSettingsStore";
 
 const volumes = () => useMediaSettingsStore.getState().userVolumes;
 const setUserVolume = (userId: string, volume: number) =>
@@ -27,5 +31,24 @@ describe("setUserVolume", () => {
     setUserVolume("a", 0.3);
     setUserVolume("a", 1);
     expect(volumes()).toEqual({});
+  });
+});
+
+describe("ayar goc islemi", () => {
+  it("eski acik gurultu engellemeyi gelismis moda tasir", () => {
+    const state = migrateMediaSettings({ noiseSuppression: true, microphoneId: "mic" }, 0);
+    expect(state.noiseSuppression).toBe("enhanced");
+    expect(state.microphoneId).toBe("mic");
+  });
+
+  it("eski kapali gurultu engellemeyi kapali tutar", () => {
+    const state = migrateMediaSettings({ noiseSuppression: false }, 0);
+    expect(state.noiseSuppression).toBe("off");
+  });
+
+  it("guncel bicimdeki ayara dokunmaz", () => {
+    expect(migrateMediaSettings({ noiseSuppression: "standard" }, 1)).toEqual({
+      noiseSuppression: "standard",
+    });
   });
 });

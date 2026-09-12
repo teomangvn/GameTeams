@@ -35,6 +35,7 @@ import type { Conversation, Friend, FriendRequest } from "@/api/friends";
 import type { Game, Ticket } from "@/api/matchmaking";
 import { VoiceControlBar } from "@/features/voice/VoiceControlBar";
 import type { VoiceSession } from "@/features/voice/useVoiceSession";
+import type { SettingsTab } from "@/features/settings/SettingsIsland";
 import { useAuthStore } from "@/stores/authStore";
 
 const iconClass = "text-neutral-50";
@@ -423,6 +424,8 @@ export interface AppSidebarProps {
   /** Ses izgarasi su an gorunuyor mu; kontrol cubugundaki donus butonu icin. */
   voiceViewOpen: boolean;
   onOpenVoiceView: () => void;
+  /** Ayar penceresini uygulamanin uzerinde acar; sayfadan ayrilmaz. */
+  onOpenSettings: (tab: SettingsTab) => void;
   onToggleMute: () => void;
   onToggleDeafen: () => void;
   onToggleScreenShare: () => void;
@@ -452,6 +455,7 @@ export function AppSidebar({
   voice,
   voiceViewOpen,
   onOpenVoiceView,
+  onOpenSettings,
   onToggleMute,
   onToggleDeafen,
   onToggleScreenShare,
@@ -530,8 +534,8 @@ export function AppSidebar({
         return buildSettingsPanel(
           authUser?.role === "ADMIN",
           () => navigate("/admin"),
-          () => navigate("/profile"),
-          () => navigate("/settings"),
+          () => onOpenSettings("profile"),
+          () => onOpenSettings("devices"),
           () => void logout(),
         );
       default:
@@ -568,6 +572,7 @@ export function AppSidebar({
     authUser?.role,
     navigate,
     logout,
+    onOpenSettings,
   ]);
 
   const filteredPanel = useMemo<SidebarPanel>(() => {
@@ -626,7 +631,7 @@ export function AppSidebar({
         avatarUrl: authUser?.avatarUrl ?? undefined,
         status: "online",
         onLogout: () => void logout(),
-        onOpenProfile: () => navigate("/profile"),
+        onOpenProfile: () => onOpenSettings("profile"),
       }}
     />
   );
