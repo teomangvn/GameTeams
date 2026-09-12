@@ -42,6 +42,9 @@ class FriendServiceTest {
     @Mock
     private SimpMessagingTemplate broker;
 
+    @Mock
+    private com.gameteams.block.UserBlockRepository blocks;
+
     @InjectMocks
     private FriendService friendService;
 
@@ -68,6 +71,29 @@ class FriendServiceTest {
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).code())
                 .isEqualTo("CANNOT_ADD_SELF");
+    }
+
+    @Test
+    void blockerCannotSendRequestUntilUnblocked() {
+        when(users.findByUsernameIgnoreCase("bob")).thenReturn(Optional.of(bob));
+        when(blocks.hasBlocked(alice.getId(), bob.getId())).thenReturn(true);
+
+        assertThatThrownBy(() -> friendService.sendRequest(alice.getId(), "bob"))
+                .isInstanceOf(ApiException.class)
+                .extracting(ex -> ((ApiException) ex).code())
+                .isEqualTo("USER_BLOCKED");
+    }
+
+    /** Engellenen kisi istek atabilmis gibi gorur ama kayit ve bildirim olusmaz. */
+    @Test
+    void blockedUserRequestSilentlyDoesNothing() {
+        when(users.findByUsernameIgnoreCase("bob")).thenReturn(Optional.of(bob));
+        when(blocks.hasBlocked(bob.getId(), alice.getId())).thenReturn(true);
+
+        friendService.sendRequest(alice.getId(), "bob");
+
+        verify(friendships, never()).save(any(Friendship.class));
+        verify(broker, never()).convertAndSendToUser(any(), any(), any());
     }
 
     @Test

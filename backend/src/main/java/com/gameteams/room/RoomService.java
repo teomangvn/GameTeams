@@ -8,6 +8,7 @@ import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,14 +40,16 @@ public class RoomService {
     private final UserRepository users;
 
     private final PresenceService presence;
+    private final ApplicationEventPublisher events;
 
     RoomService(RoomRepository rooms, RoomMemberRepository members, ChannelRepository channels,
-            UserRepository users, PresenceService presence) {
+            UserRepository users, PresenceService presence, ApplicationEventPublisher events) {
         this.rooms = rooms;
         this.members = members;
         this.channels = channels;
         this.users = users;
         this.presence = presence;
+        this.events = events;
     }
 
     /**
@@ -138,8 +141,17 @@ public class RoomService {
     @Transactional
     public void delete(UUID roomId, UUID userId) {
         RoomMember member = requireOwner(roomId, userId);
-        // Uyeler ve kanallar FK uzerindeki ON DELETE CASCADE ile birlikte gider.
-        rooms.delete(member.getRoom());
+        Room room = member.getRoom();
+
+        // Silmeden once topla: uyeler ve kanallar CASCADE ile birlikte gidiyor.
+        List<UUID> memberIds = members.findAllByRoomIdWithUser(roomId).stream()
+                .map(m -> m.getUser().getId())
+                .toList();
+        var ended = new RoomMembershipEnded(roomId, room.getName(),
+                RoomMembershipEnded.Reason.ROOM_DELETED, memberIds, voiceChannelIds(roomId));
+
+        rooms.delete(room);
+        events.publishEvent(ended);
         log.info("Oda silindi: {}", roomId);
     }
 
@@ -170,6 +182,8 @@ public class RoomService {
                     "Oda sahibi ayrilamaz. Odayi silebilirsin.");
         }
         members.delete(member);
+        events.publishEvent(new RoomMembershipEnded(roomId, member.getRoom().getName(),
+                RoomMembershipEnded.Reason.LEFT, List.of(userId), voiceChannelIds(roomId)));
     }
 
     @Transactional(readOnly = true)
@@ -207,6 +221,15 @@ public class RoomService {
         RoomMember target = members.findByRoomIdAndUserId(roomId, targetUserId)
                 .orElseThrow(() -> ApiException.notFound("NOT_A_MEMBER", "Kullanici bu odada degil."));
         members.delete(target);
+        events.publishEvent(new RoomMembershipEnded(roomId, target.getRoom().getName(),
+                RoomMembershipEnded.Reason.REMOVED, List.of(targetUserId), voiceChannelIds(roomId)));
+    }
+
+    private List<UUID> voiceChannelIds(UUID roomId) {
+        return channels.findAllByRoomIdOrderByPositionAscCreatedAtAsc(roomId).stream()
+                .filter(channel -> channel.getType() == ChannelType.VOICE)
+                .map(Channel::getId)
+                .toList();
     }
 
     /** Davet kodunu yeniler; eski kod aninda gecersiz olur. */

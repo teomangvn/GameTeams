@@ -68,6 +68,16 @@ export function useLeaveRoom() {
   });
 }
 
+export function useKickMember(roomId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => roomsApi.removeMember(roomId!, userId),
+    onSuccess: () => {
+      if (roomId) void queryClient.invalidateQueries({ queryKey: roomKeys.members(roomId) });
+    },
+  });
+}
+
 export function useDeleteRoom() {
   const queryClient = useQueryClient();
   return useMutation({

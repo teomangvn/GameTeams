@@ -11,6 +11,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.gameteams.block.UserBlockRepository;
 import com.gameteams.common.ApiException;
 import com.gameteams.friend.FriendDtos.FriendEvent;
 import com.gameteams.friend.FriendDtos.FriendRequestSummary;
@@ -28,13 +29,16 @@ public class FriendService {
     private final UserRepository users;
     private final PresenceService presence;
     private final SimpMessagingTemplate broker;
+    private final UserBlockRepository blocks;
 
     FriendService(FriendshipRepository friendships, UserRepository users,
-            PresenceService presence, SimpMessagingTemplate broker) {
+            PresenceService presence, SimpMessagingTemplate broker,
+            UserBlockRepository blocks) {
         this.friendships = friendships;
         this.users = users;
         this.presence = presence;
         this.broker = broker;
+        this.blocks = blocks;
     }
 
     /**
@@ -52,6 +56,16 @@ public class FriendService {
 
         if (addressee.getId().equals(requesterId)) {
             throw ApiException.badRequest("CANNOT_ADD_SELF", "Kendini ekleyemezsin.");
+        }
+
+        if (blocks.hasBlocked(requesterId, addressee.getId())) {
+            throw ApiException.conflict("USER_BLOCKED",
+                    "Bu kullanıcıyı engelledin. İstek göndermek için önce engeli kaldır.");
+        }
+        if (blocks.hasBlocked(addressee.getId(), requesterId)) {
+            // Engellendigini sizdirmamak icin istek gonderilmis gibi yanit doner;
+            // kayit acilmaz, karsi tarafa bildirim gitmez.
+            return toSummary(addressee, java.time.Instant.now());
         }
 
         var existing = friendships.findBetween(requesterId, addressee.getId());
@@ -112,14 +126,6 @@ public class FriendService {
         friendships.delete(friendship);
 
         notify(other.getId(), FriendEvent.removed(friendshipId, toSummary(self, null)));
-    }
-
-    @Transactional
-    public void block(UUID otherUserId, UUID userId) {
-        Friendship friendship = friendships.findBetween(userId, otherUserId)
-                .orElseGet(() -> friendships.save(new Friendship(
-                        users.getReferenceById(userId), users.getReferenceById(otherUserId))));
-        friendship.block();
     }
 
     @Transactional(readOnly = true)

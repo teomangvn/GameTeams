@@ -28,6 +28,8 @@ export interface Conversation {
   otherOnline: boolean;
   lastMessage: ChatMessage | null;
   createdAt: string;
+  /** Karsi tarafi ben engelledim: mesaj kutusu yerine "engeli kaldir" gosterilir. */
+  blockedByMe: boolean;
 }
 
 export type FriendEvent = {

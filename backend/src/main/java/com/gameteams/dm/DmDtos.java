@@ -24,6 +24,8 @@ public final class DmDtos {
             boolean otherOnline,
             /** Listede onizleme icin; hic mesaj yoksa null. */
             MessageResponse lastMessage,
-            Instant createdAt) {
+            Instant createdAt,
+            /** Karsi tarafi ben engelledim; mesaj kutusu yerine "engeli kaldir" gosterilir. */
+            boolean blockedByMe) {
     }
 }

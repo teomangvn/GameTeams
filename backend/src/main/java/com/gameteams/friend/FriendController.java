@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.gameteams.auth.AuthenticatedUser;
+import com.gameteams.block.BlockService;
 import com.gameteams.friend.FriendDtos.AddFriendRequest;
 import com.gameteams.friend.FriendDtos.FriendRequestSummary;
 import com.gameteams.friend.FriendDtos.FriendSummary;
@@ -25,9 +26,11 @@ import jakarta.validation.Valid;
 public class FriendController {
 
     private final FriendService friendService;
+    private final BlockService blockService;
 
-    FriendController(FriendService friendService) {
+    FriendController(FriendService friendService, BlockService blockService) {
         this.friendService = friendService;
+        this.blockService = blockService;
     }
 
     @GetMapping
@@ -71,10 +74,11 @@ public class FriendController {
         return ResponseEntity.noContent().build();
     }
 
+    /** Eski istemciler icin; yeni uc PUT /api/blocks/{userId}. */
     @PostMapping("/{userId}/block")
     ResponseEntity<Void> block(@AuthenticationPrincipal AuthenticatedUser me,
             @PathVariable UUID userId) {
-        friendService.block(userId, me.id());
+        blockService.block(me.id(), userId);
         return ResponseEntity.noContent().build();
     }
 }

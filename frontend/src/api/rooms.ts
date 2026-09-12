@@ -65,6 +65,10 @@ export const roomsApi = {
 
   members: (roomId: string) => request<RoomMember[]>(`/api/rooms/${roomId}/members`),
 
+  /** Oda sahibi bir uyeyi cikarir. */
+  removeMember: (roomId: string, userId: string) =>
+    request<void>(`/api/rooms/${roomId}/members/${userId}`, { method: "DELETE" }),
+
   regenerateInvite: (roomId: string) =>
     request<{ inviteCode: string }>(`/api/rooms/${roomId}/invite-code`, { method: "POST" }),
 

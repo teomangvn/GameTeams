@@ -25,6 +25,10 @@ export interface ChatAreaProps {
   onStartCall?: () => void;
   /** Bu kisiyle su an aramada miyiz (buton "Aramaya don" olur). */
   inCall?: boolean;
+  /** Engellenen kullanicilarin kanal mesajlari katlanir. */
+  blockedUserIds?: Set<string>;
+  /** DM'deki kisiyi engellediysem mesaj kutusu yerine gosterilir. */
+  onUnblock?: () => void;
 }
 
 const timeFormatter = new Intl.DateTimeFormat("tr-TR", {
@@ -95,13 +99,34 @@ function MessageRow({
   isSelf,
   /** Ayni kisinin arka arkaya mesajlarinda avatar/isim tekrar edilmez. */
   grouped,
+  blocked,
 }: {
   message: ChatMessage;
   isSelf: boolean;
   grouped: boolean;
+  /** Yazari engelledim: icerik katlanir, istenirse acilir. */
+  blocked: boolean;
 }) {
   const { author } = message;
   const initials = author.displayName.slice(0, 2).toUpperCase();
+  const [revealed, setRevealed] = useState(false);
+
+  // Engellenen kisinin kanal mesajlari silinmez (baskalari gorur) ama bana
+  // katlanmis gelir; odadaki konusmanin akisi bozulmasin diye tamamen gizlenmez.
+  if (blocked && !revealed) {
+    return (
+      <div className="flex gap-3 px-6 py-1">
+        <div className="w-10 shrink-0" />
+        <button
+          type="button"
+          onClick={() => setRevealed(true)}
+          className="font-lexend text-[13px] text-neutral-600 italic hover:text-neutral-400"
+        >
+          Engellediğin bir kullanıcının mesajı · göster
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className={cn("flex gap-3 px-6 hover:bg-neutral-900/40", grouped ? "py-0.5" : "pt-4 pb-0.5")}>
@@ -170,6 +195,8 @@ export function ChatArea({
   emptyHint,
   onStartCall,
   inCall = false,
+  blockedUserIds,
+  onUnblock,
 }: ChatAreaProps) {
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -288,7 +315,7 @@ export function ChatArea({
           </>
         )}
         <span className="ml-auto flex items-center gap-1 shrink-0">
-          {isDm && onStartCall && (
+          {isDm && onStartCall && !conversation?.blockedByMe && (
             <button
               type="button"
               onClick={onStartCall}
@@ -368,6 +395,7 @@ export function ChatArea({
                 message={message}
                 isSelf={message.author.id === currentUserId}
                 grouped={grouped}
+                blocked={blockedUserIds?.has(message.author.id) ?? false}
               />
             );
           })
@@ -375,6 +403,24 @@ export function ChatArea({
         <div ref={bottomRef} />
       </div>
 
+      {conversation?.blockedByMe ? (
+        <div className="shrink-0 px-6 pb-6 pt-2">
+          <div className="flex items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-3">
+            <span className="flex-1 font-lexend text-[13px] text-neutral-400">
+              {title} kişisini engelledin. Mesaj göndermek ve aramak için engeli kaldırman gerekiyor.
+            </span>
+            {onUnblock && (
+              <button
+                type="button"
+                onClick={onUnblock}
+                className="h-8 px-3 rounded-md shrink-0 font-lexend text-[13px] text-neutral-100 border border-neutral-700 hover:bg-neutral-800 transition-colors"
+              >
+                Engeli kaldır
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
       <div className="shrink-0 px-6 pb-6 pt-2">
         <div className="h-5 px-1">
           {typingUsers.length > 0 && (
@@ -431,6 +477,7 @@ export function ChatArea({
           </button>
         </div>
       </div>
+      )}
     </div>
   );
 }

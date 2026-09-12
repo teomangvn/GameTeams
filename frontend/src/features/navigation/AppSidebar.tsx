@@ -16,6 +16,11 @@ import {
   Checkmark,
   Close,
   Phone,
+  Misuse,
+  Undo,
+  UserMinus,
+  TrashCan,
+  Logout,
   UserFollow,
   Trophy,
   Time,
@@ -33,6 +38,20 @@ import {
   type SidebarRailItem,
 } from "@/components/ui/sidebar-component";
 import type { Conversation, Friend, FriendRequest } from "@/api/friends";
+import type { BlockedUser } from "@/api/blocks";
+
+/** Onay penceresinde isim gostermek icin kimlik yaninda gorunen ad da tasinir. */
+export interface UserRef {
+  userId: string;
+  displayName: string;
+}
+
+interface FriendRelationActions {
+  blockedUsers: BlockedUser[];
+  onRemoveFriend: (user: UserRef) => void;
+  onBlockUser: (user: UserRef) => void;
+  onUnblockUser: (user: UserRef) => void;
+}
 import type { Game, Ticket } from "@/api/matchmaking";
 import { VoiceControlBar } from "@/features/voice/VoiceControlBar";
 import type { VoiceSession } from "@/features/voice/useVoiceSession";
@@ -64,6 +83,8 @@ function buildRoomPanel(
   onSelectChannel: (channel: Channel) => void,
   onJoinVoice: (channel: Channel) => void,
   onCreateChannel: () => void,
+  onLeaveRoom: (room: RoomDetail) => void,
+  onDeleteRoom: (room: RoomDetail) => void,
 ): SidebarPanel {
   const text = room.channels.filter((c) => c.type === "TEXT");
   const voiceChannels = room.channels.filter((c) => c.type === "VOICE");
@@ -134,6 +155,25 @@ function buildRoomPanel(
               } satisfies SidebarMenuItem,
             ]
           : []),
+        {
+          id: "delete-room",
+          icon: <TrashCan size={16} className="text-red-400" />,
+          label: "Odayı sil",
+          onSelect: () => onDeleteRoom(room),
+        },
+      ],
+    });
+  } else {
+    // Sahip ayrilamaz (oda sahipsiz kalirdi); ona "Odayi sil" gosterilir.
+    sections.push({
+      title: "Oda",
+      items: [
+        {
+          id: "leave-room",
+          icon: <Logout size={16} className="text-red-400" />,
+          label: "Odadan ayrıl",
+          onSelect: () => onLeaveRoom(room),
+        },
       ],
     });
   }
@@ -226,7 +266,9 @@ function buildFriendsPanel(
   onCall: (userId: string) => void,
   onAccept: (friendshipId: string) => void,
   onDecline: (friendshipId: string) => void,
+  relations: FriendRelationActions,
 ): SidebarPanel {
+  const { blockedUsers, onRemoveFriend, onBlockUser, onUnblockUser } = relations;
   /**
    * Arkadasa tiklamak secenekleri (mesaj, sesli arama) acar; kullanici ne
    * yapacagini kendisi secer. Satirda onSelect bilerek yok: olsaydi tiklama
@@ -248,6 +290,18 @@ function buildFriendsPanel(
         icon: <Phone size={16} className={f.online ? "text-emerald-400" : iconClass} />,
         label: f.online ? "Sesli ara" : "Sesli ara (çevrimdışı)",
         onSelect: () => onCall(f.userId),
+      },
+      {
+        id: `${f.userId}-remove`,
+        icon: <UserMinus size={16} className="text-red-400" />,
+        label: "Arkadaşlıktan çıkar",
+        onSelect: () => onRemoveFriend({ userId: f.userId, displayName: f.displayName }),
+      },
+      {
+        id: `${f.userId}-block`,
+        icon: <Misuse size={16} className="text-red-400" />,
+        label: "Engelle",
+        onSelect: () => onBlockUser({ userId: f.userId, displayName: f.displayName }),
       },
     ],
   });
@@ -279,6 +333,13 @@ function buildFriendsPanel(
             label: "Reddet",
             onSelect: () => onDecline(r.friendshipId),
           },
+          {
+            // Istenmeyen istek tekrar tekrar gelmesin.
+            id: `${r.friendshipId}-block`,
+            icon: <Misuse size={16} className="text-red-400" />,
+            label: "Engelle",
+            onSelect: () => onBlockUser({ userId: r.userId, displayName: r.displayName }),
+          },
         ],
       })),
     });
@@ -293,18 +354,38 @@ function buildFriendsPanel(
       title: `Çevrimdışı — ${offline.length}`,
       items: offline.map(friendItem),
     },
-    {
-      title: "İşlemler",
-      items: [
-        {
-          id: "add-friend",
-          icon: <UserFollow size={16} className={iconClass} />,
-          label: "Arkadaş ekle",
-          onSelect: onAddFriend,
-        },
-      ],
-    },
   );
+
+  if (blockedUsers.length > 0) {
+    sections.push({
+      title: `Engellenenler — ${blockedUsers.length}`,
+      items: blockedUsers.map<SidebarMenuItem>((b) => ({
+        id: `blocked-${b.userId}`,
+        icon: <Misuse size={16} className="text-neutral-500" />,
+        label: b.displayName,
+        children: [
+          {
+            id: `blocked-${b.userId}-unblock`,
+            icon: <Undo size={16} className={iconClass} />,
+            label: "Engeli kaldır",
+            onSelect: () => onUnblockUser({ userId: b.userId, displayName: b.displayName }),
+          },
+        ],
+      })),
+    });
+  }
+
+  sections.push({
+    title: "İşlemler",
+    items: [
+      {
+        id: "add-friend",
+        icon: <UserFollow size={16} className={iconClass} />,
+        label: "Arkadaş ekle",
+        onSelect: onAddFriend,
+      },
+    ],
+  });
 
   return { title: "Arkadaşlar", sections };
 }
@@ -423,6 +504,12 @@ export interface AppSidebarProps {
   onOpenDmWith: (userId: string) => void;
   /** Arkadasi sesli arar. */
   onCallFriend: (userId: string) => void;
+  blockedUsers: BlockedUser[];
+  onRemoveFriend: (user: UserRef) => void;
+  onBlockUser: (user: UserRef) => void;
+  onUnblockUser: (user: UserRef) => void;
+  onLeaveRoom: (room: RoomDetail) => void;
+  onDeleteRoom: (room: RoomDetail) => void;
   onAcceptFriendRequest: (friendshipId: string) => void;
   onDeclineFriendRequest: (friendshipId: string) => void;
   onAddFriend: () => void;
@@ -461,6 +548,12 @@ export function AppSidebar({
   onSelectConversation,
   onOpenDmWith,
   onCallFriend,
+  blockedUsers,
+  onRemoveFriend,
+  onBlockUser,
+  onUnblockUser,
+  onLeaveRoom,
+  onDeleteRoom,
   onAcceptFriendRequest,
   onDeclineFriendRequest,
   onAddFriend,
@@ -534,6 +627,8 @@ export function AppSidebar({
         onSelectChannel,
         onJoinVoice,
         onCreateChannel,
+        onLeaveRoom,
+        onDeleteRoom,
       );
     }
 
@@ -547,6 +642,7 @@ export function AppSidebar({
           onCallFriend,
           onAcceptFriendRequest,
           onDeclineFriendRequest,
+          { blockedUsers, onRemoveFriend, onBlockUser, onUnblockUser },
         );
       case "dms":
         return buildDmPanel(conversations, activeConversationId, onSelectConversation);
@@ -582,6 +678,12 @@ export function AppSidebar({
     onSelectConversation,
     onOpenDmWith,
     onCallFriend,
+    blockedUsers,
+    onRemoveFriend,
+    onBlockUser,
+    onUnblockUser,
+    onLeaveRoom,
+    onDeleteRoom,
     onAcceptFriendRequest,
     onDeclineFriendRequest,
     onAddFriend,

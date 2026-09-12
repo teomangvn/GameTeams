@@ -6,8 +6,9 @@ import { roomKeys } from "@/features/rooms/queries";
 import { subscribe } from "@/lib/stompClient";
 
 export interface RoomEvent {
-  type: "PRESENCE_UPDATE";
-  userId: string;
+  type: "PRESENCE_UPDATE" | "MEMBER_LEFT" | "MEMBER_REMOVED" | "ROOM_DELETED";
+  /** ROOM_DELETED'da null. */
+  userId: string | null;
   online: boolean;
 }
 
@@ -25,7 +26,17 @@ export function useRoomEvents(roomId: string | null) {
     if (!roomId) return;
 
     return subscribe<RoomEvent>(`/topic/room.${roomId}`, (event) => {
-      if (event.type !== "PRESENCE_UPDATE") return;
+      if (event.type === "MEMBER_LEFT" || event.type === "MEMBER_REMOVED") {
+        queryClient.setQueryData<RoomMember[]>(roomKeys.members(roomId), (current) =>
+          current?.filter((member) => member.userId !== event.userId),
+        );
+        return;
+      }
+      if (event.type === "ROOM_DELETED") {
+        // Kullaniciya yonelik bildirim ayrica /user/queue/rooms'tan gelir.
+        void queryClient.invalidateQueries({ queryKey: roomKeys.all });
+        return;
+      }
 
       queryClient.setQueryData<RoomMember[]>(roomKeys.members(roomId), (current) =>
         current?.map((member) =>

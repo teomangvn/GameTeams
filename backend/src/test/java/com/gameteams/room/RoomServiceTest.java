@@ -2,6 +2,7 @@ package com.gameteams.room;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Optional;
@@ -36,6 +37,9 @@ class RoomServiceTest {
 
     @Mock
     private UserRepository users;
+
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher events;
 
     @InjectMocks
     private RoomService roomService;
@@ -124,6 +128,21 @@ class RoomServiceTest {
                 .isInstanceOf(ApiException.class)
                 .extracting(ex -> ((ApiException) ex).code())
                 .isEqualTo("ALREADY_MEMBER");
+    }
+
+    /** Ayrilan uyenin ses kanalindan cikarilmasi ve listelerin tazelenmesi bu olaya bagli. */
+    @Test
+    void leavePublishesMembershipEndedWithRoomVoiceChannels() {
+        when(members.findByRoomIdAndUserId(roomId, userId))
+                .thenReturn(Optional.of(new RoomMember(room, user, RoomRole.MEMBER)));
+        when(channels.findAllByRoomIdOrderByPositionAscCreatedAtAsc(roomId)).thenReturn(java.util.List.of());
+
+        roomService.leave(roomId, userId);
+
+        var captor = org.mockito.ArgumentCaptor.forClass(RoomMembershipEnded.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().reason()).isEqualTo(RoomMembershipEnded.Reason.LEFT);
+        assertThat(captor.getValue().userIds()).containsExactly(userId);
     }
 
     @Test

@@ -1,16 +1,29 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import type { Conversation } from "@/api/friends";
-import type { Channel } from "@/api/rooms";
+import type { Channel, RoomDetail, RoomMember } from "@/api/rooms";
 import AppSidebar from "@/features/navigation/AppSidebar";
 import ChatArea from "@/features/chat/ChatArea";
 import MemberList from "@/features/members/MemberList";
 import RoomDialog from "@/features/rooms/RoomDialog";
-import { roomKeys, useCreateChannel, useRoom, useRoomMembers, useRooms } from "@/features/rooms/queries";
+import {
+  roomKeys,
+  useCreateChannel,
+  useDeleteRoom,
+  useKickMember,
+  useLeaveRoom,
+  useRoom,
+  useRoomMembers,
+  useRooms,
+} from "@/features/rooms/queries";
 import {
   useAcceptFriendRequest,
+  useBlockedUsers,
+  useBlockUser,
   useDeclineFriendRequest,
+  useRemoveFriend,
+  useUnblockUser,
   useConversations,
   useFriends,
   useIncomingRequests,
@@ -21,6 +34,9 @@ import { useFriendEvents } from "@/features/friends/useFriendEvents";
 import { useRoomEvents } from "@/features/rooms/useRoomEvents";
 import MatchFoundDialog from "@/features/matchmaking/MatchFoundDialog";
 import PromptDialog from "@/components/ui/prompt-dialog";
+import ConfirmDialog from "@/components/ui/confirm-dialog";
+import type { UserRef } from "@/features/navigation/AppSidebar";
+import { subscribe } from "@/lib/stompClient";
 import CreateChannelDialog from "@/features/channels/CreateChannelDialog";
 import { ApiError } from "@/api/client";
 import { toast } from "@/stores/toastStore";
@@ -29,6 +45,22 @@ import { useVoice } from "@/features/voice/VoiceSessionProvider";
 import VoiceGrid from "@/features/voice/VoiceGrid";
 import AppBackground from "@/features/shell/AppBackground";
 import SettingsIsland, { type SettingsTab } from "@/features/settings/SettingsIsland";
+
+/** Geri alinamayan bir islem icin onay istegi. */
+interface ConfirmRequest {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  danger?: boolean;
+  run: () => Promise<void>;
+}
+
+/** /user/queue/rooms: kullanicinin kendisini etkileyen oda degisikligi. */
+interface RoomNotice {
+  type: "REMOVED_FROM_ROOM" | "ROOM_DELETED";
+  roomId: string;
+  roomName: string;
+}
 
 /**
  * Uygulama kabugu: ray + kanal paneli + icerik + uye listesi.
@@ -72,6 +104,23 @@ export function AppShell() {
   const acceptRequest = useAcceptFriendRequest();
   const declineRequest = useDeclineFriendRequest();
   const sendFriendRequest = useSendFriendRequest();
+  const removeFriend = useRemoveFriend();
+  const blockUser = useBlockUser();
+  const unblockUser = useUnblockUser();
+  const blockedQuery = useBlockedUsers();
+  const blockedUsers = useMemo(() => blockedQuery.data ?? [], [blockedQuery.data]);
+  const blockedUserIds = useMemo(
+    () => new Set(blockedUsers.map((blocked) => blocked.userId)),
+    [blockedUsers],
+  );
+
+  const leaveRoom = useLeaveRoom();
+  const deleteRoom = useDeleteRoom();
+  const kickMember = useKickMember(isRoomSection ? activeSection : null);
+
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const closeConfirm = useCallback(() => setConfirmRequest(null), []);
 
   // Arkadaslik ve DM olaylari cache'i tazeler.
   useFriendEvents(true);
@@ -179,6 +228,158 @@ export function AppShell() {
     [openConversation, handleStartCall],
   );
 
+  /** Olay dinleyicileri guncel ses oturumunu yeniden abone olmadan gorsun. */
+  const voiceRef = useRef(voice);
+  useEffect(() => {
+    voiceRef.current = voice;
+  });
+  /** Kendi sildigim oda icin gelen bildirimde ikinci bir uyari gosterilmesin. */
+  const deletedByMeRef = useRef(new Set<string>());
+
+  const runConfirm = useCallback(async () => {
+    if (!confirmRequest) return;
+    setConfirmBusy(true);
+    try {
+      await confirmRequest.run();
+      setConfirmRequest(null);
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "İşlem tamamlanamadı.");
+    } finally {
+      setConfirmBusy(false);
+    }
+  }, [confirmRequest]);
+
+  /** Ayrilinan veya silinen odanin ses kanalindaysak baglantiyi kapat. */
+  const leaveVoiceInRoom = useCallback((roomId: string) => {
+    if (voiceRef.current.session?.roomId === roomId) voiceRef.current.disconnect();
+  }, []);
+
+  const handleRemoveFriend = useCallback(
+    (user: UserRef) =>
+      setConfirmRequest({
+        title: `${user.displayName} arkadaşlıktan çıkarılsın mı?`,
+        description:
+          "Arkadaş listenden çıkar. Tekrar arkadaş olmak için yeni bir istek gerekir; sohbet geçmişiniz silinmez.",
+        confirmLabel: "Arkadaşlıktan çıkar",
+        danger: true,
+        run: async () => {
+          await removeFriend.mutateAsync(user.userId);
+          toast.success(`${user.displayName} arkadaşlıktan çıkarıldı.`);
+        },
+      }),
+    [removeFriend],
+  );
+
+  const handleBlockUser = useCallback(
+    (user: UserRef) =>
+      setConfirmRequest({
+        title: `${user.displayName} engellensin mi?`,
+        description:
+          "Sana mesaj atamaz, seni arayamaz ve arkadaşlık isteği gönderemez; arkadaşsanız arkadaşlıktan da çıkar. Odalardaki mesajları sana katlanmış görünür. Engellendiği kendisine bildirilmez.",
+        confirmLabel: "Engelle",
+        danger: true,
+        run: async () => {
+          await blockUser.mutateAsync(user.userId);
+          // Bu kisiyle aramadaysak arama da biter.
+          const session = voiceRef.current.session;
+          const inCallWithUser =
+            Boolean(session?.conversationId) &&
+            Boolean(session?.participants.some((participant) => participant.userId === user.userId));
+          if (inCallWithUser) voiceRef.current.disconnect();
+          toast.success(`${user.displayName} engellendi.`);
+        },
+      }),
+    [blockUser],
+  );
+
+  const handleUnblockUser = useCallback(
+    (user: UserRef) =>
+      unblockUser.mutate(user.userId, {
+        onSuccess: () => toast.success(`${user.displayName} kişisinin engeli kaldırıldı.`),
+        onError: (error) =>
+          toast.error(error instanceof ApiError ? error.message : "Engel kaldırılamadı."),
+      }),
+    [unblockUser],
+  );
+
+  const handleLeaveRoom = useCallback(
+    (room: RoomDetail) =>
+      setConfirmRequest({
+        title: `${room.name} odasından ayrılmak istiyor musun?`,
+        description: "Kanallarını ve mesajlarını artık göremezsin. Tekrar katılmak için davet kodu gerekir.",
+        confirmLabel: "Odadan ayrıl",
+        danger: true,
+        run: async () => {
+          await leaveRoom.mutateAsync(room.id);
+          leaveVoiceInRoom(room.id);
+          setActiveSection("quickmatch");
+          toast.success(`${room.name} odasından ayrıldın.`);
+        },
+      }),
+    [leaveRoom, leaveVoiceInRoom],
+  );
+
+  const handleDeleteRoom = useCallback(
+    (room: RoomDetail) =>
+      setConfirmRequest({
+        title: `${room.name} odası silinsin mi?`,
+        description:
+          "Bütün kanallar ve mesajlar kalıcı olarak silinir, üyelerin hepsi odadan çıkarılır. Bu işlem geri alınamaz.",
+        confirmLabel: "Odayı sil",
+        danger: true,
+        run: async () => {
+          deletedByMeRef.current.add(room.id);
+          try {
+            await deleteRoom.mutateAsync(room.id);
+          } catch (error) {
+            deletedByMeRef.current.delete(room.id);
+            throw error;
+          }
+          leaveVoiceInRoom(room.id);
+          setActiveSection("quickmatch");
+          toast.success(`${room.name} odası silindi.`);
+        },
+      }),
+    [deleteRoom, leaveVoiceInRoom],
+  );
+
+  const handleKickMember = useCallback(
+    (member: RoomMember) => {
+      const name = member.nickname ?? member.displayName;
+      setConfirmRequest({
+        title: `${name} odadan atılsın mı?`,
+        description:
+          "Odadan ve bulunduğu sesli kanaldan çıkarılır. Davet kodunu biliyorsa tekrar katılabilir.",
+        confirmLabel: "Odadan at",
+        danger: true,
+        run: async () => {
+          await kickMember.mutateAsync(member.userId);
+          toast.success(`${name} odadan atıldı.`);
+        },
+      });
+    },
+    [kickMember],
+  );
+
+  /**
+   * Beni etkileyen oda degisiklikleri: odadan atildim veya oda silindi. O odaya
+   * bakmiyor olsam da gelir; aksi halde oda listemde durmaya devam ederdi.
+   */
+  useEffect(() => {
+    return subscribe<RoomNotice>("/user/queue/rooms", (notice) => {
+      void queryClient.invalidateQueries({ queryKey: roomKeys.all });
+      leaveVoiceInRoom(notice.roomId);
+      setActiveSection((current) => (current === notice.roomId ? "quickmatch" : current));
+
+      if (deletedByMeRef.current.delete(notice.roomId)) return;
+      toast.error(
+        notice.type === "ROOM_DELETED"
+          ? `${notice.roomName} odası silindi.`
+          : `${notice.roomName} odasından çıkarıldın.`,
+      );
+    });
+  }, [queryClient, leaveVoiceInRoom]);
+
   const handleAddFriend = useCallback(
     (username: string) => {
       sendFriendRequest.mutate(username, {
@@ -242,6 +443,12 @@ export function AppShell() {
           }}
           onOpenDmWith={(userId) => void handleOpenDmWith(userId)}
           onCallFriend={(userId) => void handleCallFriend(userId)}
+          blockedUsers={blockedUsers}
+          onRemoveFriend={handleRemoveFriend}
+          onBlockUser={handleBlockUser}
+          onUnblockUser={handleUnblockUser}
+          onLeaveRoom={handleLeaveRoom}
+          onDeleteRoom={handleDeleteRoom}
           onAcceptFriendRequest={(id) => acceptRequest.mutate(id)}
           onDeclineFriendRequest={(id) => declineRequest.mutate(id)}
           onAddFriend={() => setPrompt("friend")}
@@ -279,6 +486,7 @@ export function AppShell() {
                 <ChatArea
                   channel={voiceChannel}
                   conversation={voice.session.conversationId ? callConversation : null}
+                  blockedUserIds={blockedUserIds}
                   roomName={voice.session.roomName}
                   membersVisible={false}
                   onToggleMembers={() => undefined}
@@ -295,6 +503,16 @@ export function AppShell() {
           inCall={
             visibleConversation !== null && voice.session?.conversationId === visibleConversation.id
           }
+          blockedUserIds={blockedUserIds}
+          onUnblock={
+            visibleConversation
+              ? () =>
+                  handleUnblockUser({
+                    userId: visibleConversation.otherUserId,
+                    displayName: visibleConversation.otherDisplayName,
+                  })
+              : undefined
+          }
           membersVisible={membersVisible}
           onToggleMembers={() => setMembersVisible((v) => !v)}
           emptyHint={
@@ -310,6 +528,14 @@ export function AppShell() {
             members={membersQuery.data}
             onAddFriend={handleAddFriend}
             onOpenDm={(userId) => void handleOpenDmWith(userId)}
+            blockedUserIds={blockedUserIds}
+            onBlock={(member) =>
+              handleBlockUser({ userId: member.userId, displayName: member.nickname ?? member.displayName })
+            }
+            onUnblock={(member) =>
+              handleUnblockUser({ userId: member.userId, displayName: member.nickname ?? member.displayName })
+            }
+            onKick={activeRoom?.myRole === "OWNER" ? handleKickMember : undefined}
           />
         )}
       </div>
@@ -345,6 +571,17 @@ export function AppShell() {
           setVoiceViewOpen(false);
           matchmaking.dismissMatch();
         }}
+      />
+
+      <ConfirmDialog
+        open={confirmRequest !== null}
+        title={confirmRequest?.title ?? ""}
+        description={confirmRequest?.description}
+        confirmLabel={confirmRequest?.confirmLabel ?? "Tamam"}
+        danger={confirmRequest?.danger}
+        loading={confirmBusy}
+        onConfirm={() => void runConfirm()}
+        onClose={closeConfirm}
       />
 
       <SettingsIsland tab={settingsTab} onTabChange={setSettingsTab} onClose={closeSettings} />

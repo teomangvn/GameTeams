@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Chat, UserFollow } from "@carbon/icons-react";
+import { Chat, Misuse, UserFollow, Logout, Undo } from "@carbon/icons-react";
 
 import type { RoomMember } from "@/api/rooms";
 import { cn } from "@/lib/utils";
@@ -11,15 +11,20 @@ import { useAuthStore } from "@/stores/authStore";
  * Cevrimici olanlar once gelir ve nokta ile isaretlenir: "kim su an burada"
  * sorusunun cevabi listeyi bastan sona okumadan gorulebilmeli.
  */
-export function MemberList({
-  members,
-  onAddFriend,
-  onOpenDm,
-}: {
-  members: RoomMember[];
+export interface MemberActions {
   onAddFriend: (username: string) => void;
   onOpenDm: (userId: string) => void;
-}) {
+  onBlock: (member: RoomMember) => void;
+  onUnblock: (member: RoomMember) => void;
+  /** Yalnizca oda sahibine verilir. */
+  onKick?: (member: RoomMember) => void;
+  blockedUserIds: Set<string>;
+}
+
+export function MemberList({
+  members,
+  ...actions
+}: { members: RoomMember[] } & MemberActions) {
   const online = members.filter((m) => m.online);
   const offline = members.filter((m) => !m.online);
 
@@ -38,20 +43,10 @@ export function MemberList({
 
       <div className="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-4">
         {online.length > 0 && (
-          <Section
-            title={`Çevrimiçi — ${online.length}`}
-            members={online}
-            onAddFriend={onAddFriend}
-            onOpenDm={onOpenDm}
-          />
+          <Section title={`Çevrimiçi — ${online.length}`} members={online} actions={actions} />
         )}
         {offline.length > 0 && (
-          <Section
-            title={`Çevrimdışı — ${offline.length}`}
-            members={offline}
-            onAddFriend={onAddFriend}
-            onOpenDm={onOpenDm}
-          />
+          <Section title={`Çevrimdışı — ${offline.length}`} members={offline} actions={actions} />
         )}
       </div>
     </aside>
@@ -61,13 +56,11 @@ export function MemberList({
 function Section({
   title,
   members,
-  onAddFriend,
-  onOpenDm,
+  actions,
 }: {
   title: string;
   members: RoomMember[];
-  onAddFriend: (username: string) => void;
-  onOpenDm: (userId: string) => void;
+  actions: MemberActions;
 }) {
   return (
     <section className="flex flex-col gap-0.5">
@@ -75,26 +68,15 @@ function Section({
         {title}
       </h3>
       {members.map((member) => (
-        <MemberRow
-          key={member.userId}
-          member={member}
-          onAddFriend={onAddFriend}
-          onOpenDm={onOpenDm}
-        />
+        <MemberRow key={member.userId} member={member} actions={actions} />
       ))}
     </section>
   );
 }
 
-function MemberRow({
-  member,
-  onAddFriend,
-  onOpenDm,
-}: {
-  member: RoomMember;
-  onAddFriend: (username: string) => void;
-  onOpenDm: (userId: string) => void;
-}) {
+function MemberRow({ member, actions }: { member: RoomMember; actions: MemberActions }) {
+  const { onAddFriend, onOpenDm, onBlock, onUnblock, onKick, blockedUserIds } = actions;
+  const blocked = blockedUserIds.has(member.userId);
   const selfId = useAuthStore((s) => s.user?.id ?? null);
   const isSelf = selfId === member.userId;
 
@@ -157,6 +139,7 @@ function MemberRow({
           <span className="block font-lexend text-[14px] text-neutral-100 truncate">
             {label}
             {isSelf && <span className="text-neutral-500"> (sen)</span>}
+            {blocked && <span className="text-red-400/80 text-[11px]"> · engelli</span>}
           </span>
           <span
             className={cn(
@@ -175,6 +158,7 @@ function MemberRow({
           aria-label={`${label} işlemleri`}
           className="absolute right-2 top-full z-20 mt-1 w-44 rounded-lg border border-neutral-800 bg-neutral-900 p-1 shadow-lg shadow-black/60"
         >
+          {!blocked && (
           <MenuItem
             icon={<UserFollow size={16} />}
             label="Arkadaş ekle"
@@ -183,14 +167,49 @@ function MemberRow({
               onAddFriend(member.username);
             }}
           />
-          <MenuItem
-            icon={<Chat size={16} />}
-            label="Mesaj gönder"
-            onClick={() => {
-              setOpen(false);
-              onOpenDm(member.userId);
-            }}
-          />
+          )}
+          {!blocked && (
+            <MenuItem
+              icon={<Chat size={16} />}
+              label="Mesaj gönder"
+              onClick={() => {
+                setOpen(false);
+                onOpenDm(member.userId);
+              }}
+            />
+          )}
+          <div className="my-1 h-px bg-neutral-800" />
+          {blocked ? (
+            <MenuItem
+              icon={<Undo size={16} />}
+              label="Engeli kaldır"
+              onClick={() => {
+                setOpen(false);
+                onUnblock(member);
+              }}
+            />
+          ) : (
+            <MenuItem
+              icon={<Misuse size={16} />}
+              label="Engelle"
+              danger
+              onClick={() => {
+                setOpen(false);
+                onBlock(member);
+              }}
+            />
+          )}
+          {onKick && member.role !== "OWNER" && (
+            <MenuItem
+              icon={<Logout size={16} />}
+              label="Odadan at"
+              danger
+              onClick={() => {
+                setOpen(false);
+                onKick(member);
+              }}
+            />
+          )}
         </div>
       )}
     </div>
@@ -200,10 +219,12 @@ function MemberRow({
 function MenuItem({
   icon,
   label,
+  danger = false,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
+  danger?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -211,7 +232,10 @@ function MenuItem({
       type="button"
       role="menuitem"
       onClick={onClick}
-      className="w-full h-9 flex items-center gap-2 rounded-md px-3 text-left font-lexend text-[13px] text-neutral-200 transition-colors hover:bg-neutral-800"
+      className={cn(
+        "w-full h-9 flex items-center gap-2 rounded-md px-3 text-left font-lexend text-[13px] transition-colors",
+        danger ? "text-red-400 hover:bg-red-500/10" : "text-neutral-200 hover:bg-neutral-800",
+      )}
     >
       {icon}
       {label}

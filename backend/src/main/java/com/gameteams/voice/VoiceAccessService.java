@@ -4,6 +4,7 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
+import com.gameteams.block.BlockService;
 import com.gameteams.channel.Channel;
 import com.gameteams.channel.ChannelService;
 import com.gameteams.channel.ChannelType;
@@ -29,10 +30,12 @@ public class VoiceAccessService {
 
     private final ChannelService channelService;
     private final DmService dmService;
+    private final BlockService blocks;
 
-    VoiceAccessService(ChannelService channelService, DmService dmService) {
+    VoiceAccessService(ChannelService channelService, DmService dmService, BlockService blocks) {
         this.channelService = channelService;
         this.dmService = dmService;
+        this.blocks = blocks;
     }
 
     /**
@@ -50,6 +53,10 @@ public class VoiceAccessService {
                 throw ex;
             }
             DmConversation conversation = dmService.requireParticipant(spaceId, userId);
+            // Engel sonrasi arama alanina katilmak da, dinlemek de yok.
+            if (blocks.isBlockedEitherWay(userId, conversation.otherThan(userId).getId())) {
+                throw ApiException.forbidden("CALL_NOT_AVAILABLE", "Bu kullanıcıyla arama yapılamaz.");
+            }
             return new VoiceSpace(conversation.getId(), DM_CALL_LIMIT, true);
         }
 

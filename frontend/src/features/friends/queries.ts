@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { blocksApi } from "@/api/blocks";
 import { dmApi, friendsApi } from "@/api/friends";
 
 export const friendKeys = {
@@ -7,7 +8,12 @@ export const friendKeys = {
   incoming: ["friends", "incoming"] as const,
   outgoing: ["friends", "outgoing"] as const,
   conversations: ["conversations"] as const,
+  blocked: ["blocks"] as const,
 };
+
+export function useBlockedUsers() {
+  return useQuery({ queryKey: friendKeys.blocked, queryFn: blocksApi.list });
+}
 
 export function useFriends() {
   return useQuery({ queryKey: friendKeys.friends, queryFn: friendsApi.list });
@@ -30,6 +36,9 @@ function useFriendMutation<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult>
       void queryClient.invalidateQueries({ queryKey: friendKeys.friends });
       void queryClient.invalidateQueries({ queryKey: friendKeys.incoming });
       void queryClient.invalidateQueries({ queryKey: friendKeys.outgoing });
+      // Engel durumu sohbet listesinde (blockedByMe) de gorunur.
+      void queryClient.invalidateQueries({ queryKey: friendKeys.conversations });
+      void queryClient.invalidateQueries({ queryKey: friendKeys.blocked });
     },
   });
 }
@@ -38,6 +47,8 @@ export const useSendFriendRequest = () => useFriendMutation(friendsApi.sendReque
 export const useAcceptFriendRequest = () => useFriendMutation(friendsApi.accept);
 export const useDeclineFriendRequest = () => useFriendMutation(friendsApi.decline);
 export const useRemoveFriend = () => useFriendMutation(friendsApi.remove);
+export const useBlockUser = () => useFriendMutation(blocksApi.block);
+export const useUnblockUser = () => useFriendMutation(blocksApi.unblock);
 
 export function useOpenConversation() {
   const queryClient = useQueryClient();
