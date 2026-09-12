@@ -25,8 +25,7 @@ import CreateChannelDialog from "@/features/channels/CreateChannelDialog";
 import { ApiError } from "@/api/client";
 import { toast } from "@/stores/toastStore";
 import { useMatchmaking } from "@/features/matchmaking/useMatchmaking";
-import { useVoiceSession } from "@/features/voice/useVoiceSession";
-import VoiceStage from "@/features/voice/VoiceStage";
+import { useVoice } from "@/features/voice/VoiceSessionProvider";
 import VoiceGrid from "@/features/voice/VoiceGrid";
 import AppBackground from "@/features/shell/AppBackground";
 
@@ -36,24 +35,21 @@ import AppBackground from "@/features/shell/AppBackground";
  * degistirince kopmamasi icin tek bir ust seviyede yasamasi gerekir.
  */
 export function AppShell() {
-  const [activeSection, setActiveSection] = useState<string>("quickmatch");
+  const voice = useVoice();
+  // Baska bir sayfadan (ayarlar, profil) donuldugunde sese bagliysak o odaya ac.
+  const [activeSection, setActiveSection] = useState<string>(
+    () => voice.session?.roomId ?? "quickmatch",
+  );
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [membersVisible, setMembersVisible] = useState(true);
   const [roomDialogOpen, setRoomDialogOpen] = useState(false);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [prompt, setPrompt] = useState<"channel" | "friend" | null>(null);
-  /**
-   * Ses izgarasi mi sohbet mi gosterilecek. Ses baglantisi route'tan bagimsiz
-   * yasiyor; kullanici sese bagliyken metin kanalina gecebilmeli, bu yuzden
-   * "bagli olmak" ile "izgarayi goruyor olmak" ayri durumlar.
-   */
-  const [voiceViewOpen, setVoiceViewOpen] = useState(false);
   /** Ses izgarasinin yanindaki kanal sohbeti acik mi. */
   const [voiceChatOpen, setVoiceChatOpen] = useState(false);
-  /** Baglanilan ses kanalinin kendisi; sohbeti bu kanala yazilir. */
-  const [voiceChannel, setVoiceChannel] = useState<Channel | null>(null);
 
-  const voice = useVoiceSession();
+  // Izgara durumu provider'da tutulur: sayfa degistirip donunce kaybolmasin.
+  const { viewOpen: voiceViewOpen, setViewOpen: setVoiceViewOpen } = voice;
   const queryClient = useQueryClient();
 
   const roomsQuery = useRooms();
@@ -80,6 +76,12 @@ export function AppShell() {
 
   const activeRoom = roomQuery.data ?? null;
 
+  // Baglanilan ses kanalinin kendisi; izgaranin yanindaki sohbet bu kanala
+  // yazilir. Oda detayi zaten cache'te oldugu icin ek istek neredeyse hic olmaz.
+  const voiceRoomQuery = useRoom(voice.session?.roomId ?? null);
+  const voiceChannel =
+    voiceRoomQuery.data?.channels.find((c) => c.id === voice.session?.channelId) ?? null;
+
   // Odaya gecildiginde ilk metin kanalini ac.
   useEffect(() => {
     if (!activeRoom) {
@@ -95,23 +97,45 @@ export function AppShell() {
   const activeChannel =
     activeRoom?.channels.find((c) => c.id === activeChannelId) ?? null;
 
+  // Secili DM yalnizca DM bolumunde gosterilir. Onceden bolumden bagimsizdi:
+  // bir DM acildiktan sonra odaya donup metin kanalina tiklamak hala DM'i
+  // gosteriyor, uye listesi de gizli kaliyordu.
+  const visibleConversation = activeSection === "dms" ? activeConversation : null;
+
   const handleJoinVoice = useCallback(
     (channel: Channel) => {
       if (!activeRoom) return;
-      void voice.connect(channel.id, channel.name, activeRoom.name);
-      setVoiceChannel(channel);
+      // Zaten bagli olunan kanala tiklamak yeniden baglanmaz, izgarayi geri acar.
+      void voice.connect(channel.id, channel.name, activeRoom.id, activeRoom.name);
       setVoiceViewOpen(true);
     },
-    [activeRoom, voice],
+    [activeRoom, voice, setVoiceViewOpen],
   );
+
+  /** Baska bir ekrandayken ses izgarasina geri doner. */
+  const handleOpenVoiceView = useCallback(() => {
+    if (!voice.session) return;
+    // Kenar cubugu da ses kanalinin odasini gostersin; katilimcilar orada.
+    setActiveSection(voice.session.roomId);
+    setVoiceViewOpen(true);
+  }, [voice.session, setVoiceViewOpen]);
 
   const handleOpenDmWith = useCallback(
     async (userId: string) => {
-      const conversation = await openConversation.mutateAsync(userId);
+      let conversation: Conversation;
+      try {
+        conversation = await openConversation.mutateAsync(userId);
+      } catch (error) {
+        // Onceden yakalanmiyordu: hata sessizce konsola dusup buton hicbir sey yapmiyordu.
+        toast.error(error instanceof ApiError ? error.message : "Sohbet açılamadı.");
+        return;
+      }
       setActiveSection("dms");
       setActiveConversation(conversation);
+      // Izgara acik kalirsa acilan DM gorunmuyordu.
+      setVoiceViewOpen(false);
     },
-    [openConversation],
+    [openConversation, setVoiceViewOpen],
   );
 
   const handleAddFriend = useCallback(
@@ -147,7 +171,7 @@ export function AppShell() {
         },
       );
     },
-    [createChannel],
+    [createChannel, setVoiceViewOpen],
   );
 
   return (
@@ -189,11 +213,9 @@ export function AppShell() {
           onToggleDeafen={voice.toggleDeafen}
           onToggleScreenShare={voice.toggleScreenShare}
           onToggleCamera={voice.toggleCamera}
-          onDisconnectVoice={() => {
-            voice.disconnect();
-            setVoiceViewOpen(false);
-            setVoiceChannel(null);
-          }}
+          voiceViewOpen={voiceViewOpen}
+          onOpenVoiceView={handleOpenVoiceView}
+          onDisconnectVoice={voice.disconnect}
         />
 
         {voiceViewOpen && voice.session ? (
@@ -218,7 +240,7 @@ export function AppShell() {
         ) : (
         <ChatArea
           channel={activeChannel}
-          conversation={activeConversation}
+          conversation={visibleConversation}
           roomName={activeRoom?.name ?? ""}
           membersVisible={membersVisible}
           onToggleMembers={() => setMembersVisible((v) => !v)}
@@ -230,7 +252,7 @@ export function AppShell() {
         />
         )}
 
-        {!voiceViewOpen && membersVisible && isRoomSection && !activeConversation && membersQuery.data && (
+        {!voiceViewOpen && membersVisible && isRoomSection && !visibleConversation && membersQuery.data && (
           <MemberList
             members={membersQuery.data}
             onAddFriend={handleAddFriend}
@@ -238,9 +260,6 @@ export function AppShell() {
           />
         )}
       </div>
-
-      {/* Uzak ses/ekran akislari; gorunur bir yeri yok ama olmadan ses duyulmaz. */}
-      <VoiceStage session={voice.session} />
 
       <CreateChannelDialog
         open={prompt === "channel"}
@@ -269,6 +288,8 @@ export function AppShell() {
           void queryClient.invalidateQueries({ queryKey: roomKeys.all });
           setActiveSection(match.roomId);
           setActiveChannelId(match.textChannelId);
+          // Maç odasinin metin kanali gorunsun; ses bagli kalir, ekrana donulebilir.
+          setVoiceViewOpen(false);
           matchmaking.dismissMatch();
         }}
       />
@@ -279,6 +300,7 @@ export function AppShell() {
         onDone={(roomId) => {
           setRoomDialogOpen(false);
           setActiveSection(roomId);
+          setVoiceViewOpen(false);
         }}
       />
     </div>

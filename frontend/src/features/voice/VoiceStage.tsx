@@ -3,7 +3,7 @@ import { VolumeUp } from "@carbon/icons-react";
 
 import type { VoiceSession } from "@/features/voice/useVoiceSession";
 import { toast } from "@/stores/toastStore";
-import { useMediaSettingsStore } from "@/stores/mediaSettingsStore";
+import { useMediaSettingsStore, useUserVolume } from "@/stores/mediaSettingsStore";
 
 /**
  * Uzak akislari calan gorunmez katman.
@@ -31,6 +31,8 @@ export function VoiceStage({ session }: { session: VoiceSession | null }) {
 
   const resumeAll = useCallback(() => {
     // Tiklama bir kullanici etkilesimi; otomatik oynatma kilidi burada acilir.
+    // Yukseltme hattinin AudioContext'i de ayni kilide takiliyor olabilir.
+    void playbackContext?.resume().catch(() => undefined);
     void Promise.all([...resumeHandlers.current.values()].map((resume) => resume()));
   }, []);
 
@@ -65,6 +67,73 @@ export function VoiceStage({ session }: { session: VoiceSession | null }) {
   );
 }
 
+/**
+ * %100'un ustundeki seviyeler icin paylasilan AudioContext.
+ *
+ * HTMLMediaElement.volume 1'in ustune cikamiyor; yukseltme icin GainNode
+ * gerekiyor. Her kullanici icin ayri context acmak tarayicinin context
+ * sinirina takilir, bu yuzden tek ornek tembel olarak kurulur.
+ */
+let playbackContext: AudioContext | null = null;
+
+function getPlaybackContext(): AudioContext | null {
+  if (playbackContext) return playbackContext;
+  try {
+    playbackContext = new AudioContext();
+  } catch {
+    // Web Audio yoksa yukseltme yapilamaz; seviye %100'de sinirlanir.
+    return null;
+  }
+  return playbackContext;
+}
+
+/**
+ * Uzak akisi GainNode'dan gecirip calinabilir bir akis uretir.
+ *
+ * Kurulamazsa null doner ve cagiran dogrudan akisa geri duser (seviye %100'de
+ * sinirlanir). Onceden kontrol yoktu: ses track'i olmayan bir akis (or. once
+ * gelen goruntu) createMediaStreamSource'u patlatiyor, efekt hatasi tum
+ * uygulamayi dusuruyordu.
+ */
+function createBoostPipeline(stream: MediaStream): {
+  gain: GainNode;
+  output: MediaStream;
+  dispose: () => void;
+} | null {
+  if (stream.getAudioTracks().length === 0) return null;
+  const context = getPlaybackContext();
+  if (!context) return null;
+
+  try {
+    const source = context.createMediaStreamSource(stream);
+    const gain = context.createGain();
+    const destination = context.createMediaStreamDestination();
+    source.connect(gain);
+    gain.connect(destination);
+
+    // Chrome, uzak WebRTC akisi bir medya elemanina bagli degilse Web Audio'ya
+    // sessizlik veriyor. Ham akisi sessiz bir elemanda canli tutmak gerekiyor.
+    const keepAlive = new Audio();
+    keepAlive.muted = true;
+    keepAlive.srcObject = stream;
+    void keepAlive.play().catch(() => undefined);
+
+    return {
+      gain,
+      output: destination.stream,
+      dispose: () => {
+        source.disconnect();
+        gain.disconnect();
+        keepAlive.pause();
+        keepAlive.srcObject = null;
+      },
+    };
+  } catch (error) {
+    console.warn("Ses yukseltme hatti kurulamadi; %100 ile devam ediliyor:", error);
+    return null;
+  }
+}
+
 /** setSinkId henuz her tarayicida yok ve TS tipi de tanimli degil. */
 type AudioElementWithSink = HTMLAudioElement & {
   setSinkId?: (deviceId: string) => Promise<void>;
@@ -84,16 +153,57 @@ function RemoteAudio({
   onBlockedChange: (userId: string, resume: (() => Promise<void>) | null) => void;
 }) {
   const ref = useRef<HTMLAudioElement>(null);
+  const gainRef = useRef<GainNode | null>(null);
+  const volume = useUserVolume(userId);
+  const volumeRef = useRef(volume);
+
+  /**
+   * %100 ve alti icin dogrudan akis calinir (kanitlanmis, en dusuk gecikmeli
+   * yol). Ustu icin akis GainNode'dan gecirilip elemana o baglanir; cikis yine
+   * <audio> uzerinden oldugu icin setSinkId ve sagirlastirma aynen calisir.
+   */
+  const boost = volume > 1;
+
+  /**
+   * Seviyeyi o an kurulu hatta uygular. Hat kurulunca da cagriliyor: yeni akis
+   * geldiginde (yeniden pazarlik) GainNode 1 kazancla sifirdan kuruluyor ve
+   * seviye efekti tekrar calismadigi icin yukseltme sessizce kayboluyordu.
+   */
+  const applyVolume = useCallback(() => {
+    const element = ref.current;
+    if (!element) return;
+    const level = volumeRef.current;
+    if (gainRef.current) {
+      element.volume = 1;
+      gainRef.current.gain.value = level;
+    } else {
+      element.volume = Math.min(1, Math.max(0, level));
+    }
+  }, []);
 
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
 
-    element.srcObject = stream;
+    const pipeline = boost ? createBoostPipeline(stream) : null;
+    gainRef.current = pipeline?.gain ?? null;
+    element.srcObject = pipeline?.output ?? stream;
+    applyVolume();
+
+    const context = pipeline ? playbackContext : null;
 
     const attempt = async () => {
       try {
         await element.play();
+        // Eleman caliyor ama yukseltme hattinin context'i askidaysa yine ses
+        // yok; kullaniciya "Sesi baslat" butonu gosterilmeli.
+        if (context?.state === "suspended") {
+          void context.resume().catch(() => undefined);
+          if (context.state === "suspended") {
+            onBlockedChange(userId, attempt);
+            return;
+          }
+        }
         onBlockedChange(userId, null);
       } catch (error) {
         // Sessizce yutmak, sesin neden gelmedigini tamamen gorunmez kiliyordu.
@@ -102,9 +212,26 @@ function RemoteAudio({
       }
     };
 
+    // Kilit bir kullanici etkilesimiyle acilinca butonu kaldir.
+    const onContextState = () => {
+      if (context?.state === "running") void attempt();
+    };
+    context?.addEventListener("statechange", onContextState);
+
     void attempt();
-    return () => onBlockedChange(userId, null);
-  }, [stream, userId, onBlockedChange]);
+    return () => {
+      context?.removeEventListener("statechange", onContextState);
+      pipeline?.dispose();
+      gainRef.current = null;
+      onBlockedChange(userId, null);
+    };
+  }, [stream, userId, onBlockedChange, boost, applyVolume]);
+
+  // Seviye degisimi hatti yeniden kurmaz; yalnizca kazanc veya eleman sesi.
+  useEffect(() => {
+    volumeRef.current = volume;
+    applyVolume();
+  }, [volume, applyVolume]);
 
   // Sagirlastirma uzak sesi susturur; mikrofon ayri yonetilir.
   useEffect(() => {

@@ -20,6 +20,7 @@ import {
 export interface VoiceSession {
   channelId: string;
   channelName: string;
+  roomId: string;
   roomName: string;
   muted: boolean;
   deafened: boolean;
@@ -56,6 +57,14 @@ export class JoinFailedError extends Error {
   }
 }
 
+/** Katilma beklenirken kullanici baska kanala gecti veya sesten ayrildi. */
+export class JoinCancelledError extends Error {
+  constructor() {
+    super("voice-join-cancelled");
+    this.name = "JoinCancelledError";
+  }
+}
+
 /**
  * Kanala katilir ve sunucunun kaydi isledigini dogrular.
  *
@@ -71,13 +80,19 @@ export class JoinFailedError extends Error {
 async function joinAndConfirm(
   channelId: string,
   selfUserId: string,
+  isCancelled: () => boolean,
 ): Promise<VoiceParticipant[]> {
   for (let attempt = 0; attempt < REGISTRATION_ATTEMPTS; attempt++) {
+    // Bu arada baska kanala gecildiyse durmali: sunucu tek kanal tuttugu icin
+    // eski kanala tekrar "join" yayinlamak kullaniciyi yeni kanaldan koparirdi.
+    if (isCancelled()) throw new JoinCancelledError();
+
     // Her turda yeniden yayinla: ilk denemede soket henuz baglanmamis olabilir
     // ve publish sessizce dusurulur.
     publish(`/app/voice.${channelId}.join`, {});
 
     await new Promise((resolve) => setTimeout(resolve, REGISTRATION_DELAY_MS));
+    if (isCancelled()) throw new JoinCancelledError();
 
     try {
       const latest = await voiceApi.participants(channelId);
@@ -174,9 +189,15 @@ export function useVoiceSession() {
 
         let others: VoiceParticipant[];
         try {
-          others = await joinAndConfirm(channelId, selfUserId);
-        } catch {
-          toast.error("Ses kanalina yeniden baglanilamadi.");
+          others = await joinAndConfirm(
+            channelId,
+            selfUserId,
+            () => channelIdRef.current !== channelId,
+          );
+        } catch (error) {
+          if (!(error instanceof JoinCancelledError)) {
+            toast.error("Ses kanalina yeniden baglanilamadi.");
+          }
           return;
         }
         if (channelIdRef.current !== channelId) return;
@@ -262,7 +283,7 @@ export function useVoiceSession() {
   }, [microphoneId, noiseSuppression, echoCancellation, autoGainControl, patch]);
 
   const connect = useCallback(
-    async (channelId: string, channelName: string, roomName: string) => {
+    async (channelId: string, channelName: string, roomId: string, roomName: string) => {
       if (!selfUserId) return;
       if (channelIdRef.current === channelId) return;
 
@@ -270,9 +291,19 @@ export function useVoiceSession() {
       if (channelIdRef.current) disconnect();
 
       channelIdRef.current = channelId;
+      /**
+       * Asagidaki her await'ten sonra kontrol edilir. Baglanirken baska kanala
+       * tiklamak veya ayrilmak onceden yarim kalan bu cagriyi durdurmuyordu:
+       * eski kanal icin peer kuruluyor, yeni oturumun ref'lerinin uzerine
+       * yaziliyor ve sunucuda kullanici eski kanala geri tasiniyordu. Ayrilan
+       * kullanici da arayuzde "bagli degil" gorunurken kanalda kaliyordu.
+       */
+      const isStale = () => channelIdRef.current !== channelId;
+
       setSession({
         channelId,
         channelName,
+        roomId,
         roomName,
         muted: false,
         deafened: false,
@@ -295,9 +326,16 @@ export function useVoiceSession() {
         micStream = await navigator.mediaDevices.getUserMedia({
           audio: audioConstraints(settings),
         });
+        if (isStale()) {
+          // Mikrofon izni beklenirken vazgecildi; acik kalirsa kayit isigi yanar.
+          stopTracks(micStream);
+          return;
+        }
         // Asagidaki efekt ayni ayarlar icin mikrofonu bir daha kurmasin.
         appliedAudioRef.current = audioSignature(settings);
       } catch (error) {
+        // Yeni bir kanala gecildiyse onun oturumuna dokunma.
+        if (isStale()) return;
         // Oturumu temizle: aksi halde kenar cubugu "Ses baglandi" gosterir ve
         // ayni kanala tekrar tiklamak erken donerek yeniden denemeyi engeller.
         channelIdRef.current = null;
@@ -306,7 +344,23 @@ export function useVoiceSession() {
         return;
       }
 
-      const { iceServers } = await voiceApi.iceServers();
+      let iceServers: RTCIceServer[];
+      try {
+        ({ iceServers } = await voiceApi.iceServers());
+      } catch {
+        // Onceden yakalanmiyordu: oturum "bagli" gorunup mikrofon acik kaliyordu.
+        stopTracks(micStream);
+        if (isStale()) return;
+        channelIdRef.current = null;
+        appliedAudioRef.current = null;
+        setSession(null);
+        toast.error("Ses sunucusu ayarları alınamadı. Tekrar dene.");
+        return;
+      }
+      if (isStale()) {
+        stopTracks(micStream);
+        return;
+      }
 
       const peers = new PeerManager({
         selfUserId,
@@ -321,6 +375,19 @@ export function useVoiceSession() {
             delete next[userId];
             return { ...s, remoteStreams: next };
           }),
+        // Tarayicinin "paylasimi durdur" butonu veya cikarilan kamera: arayuz
+        // ve diger katilimcilar hala yayin var saniyordu, kare siyah kaliyordu.
+        onLocalVideoEnded: (kind) => {
+          const current = sessionRef.current;
+          if (!current || channelIdRef.current !== channelId) return;
+          if (kind === "screen") {
+            patch({ screenSharing: false, localScreen: null });
+            pushStateRef.current?.(current.muted, current.deafened, false, current.cameraOn);
+          } else {
+            patch({ cameraOn: false, localCamera: null });
+            pushStateRef.current?.(current.muted, current.deafened, current.screenSharing, false);
+          }
+        },
       });
       peers.setLocalStream(micStream);
       peersRef.current = peers;
@@ -385,10 +452,15 @@ export function useVoiceSession() {
       // calisiyor gibi gorunuyordu.
       let others: VoiceParticipant[];
       try {
-        others = await joinAndConfirm(channelId, selfUserId);
+        others = await joinAndConfirm(channelId, selfUserId, isStale);
       } catch {
+        // Iptal edildiyse bu cagrinin kaynaklari zaten teardown ile kapandi;
+        // yeni oturumu yikmamak icin burada hicbir sey yapilmaz.
+        if (isStale()) return;
         // Kayit dogrulanamadi: sahte bir "bagli" durumu birakmak yerine
-        // oturumu kapat ve kullaniciya soyle.
+        // oturumu kapat ve kullaniciya soyle. Sunucuya gec ulasan bir join
+        // bizi kanala eklemis olabilir; leave bunu temizler.
+        publish(`/app/voice.${channelId}.leave`, {});
         teardown();
         setSession(null);
         toast.error("Ses kanalina baglanilamadi. Baglantini kontrol edip tekrar dene.");
@@ -399,7 +471,7 @@ export function useVoiceSession() {
       patch({ participants: others });
       for (const participant of others) void peers.addPeer(participant.userId);
     },
-    [selfUserId, disconnect, patch],
+    [selfUserId, disconnect, patch, teardown],
   );
 
   const pushState = useCallback(
@@ -531,6 +603,10 @@ function mergeStream(
 
   // Yeni MediaStream: React'in degisikligi gormesi icin kimlik degismeli.
   return { ...current, [userId]: new MediaStream([...existing.getTracks(), ...added]) };
+}
+
+function stopTracks(stream: MediaStream) {
+  for (const track of stream.getTracks()) track.stop();
 }
 
 /** Mikrofonun yeniden kurulmasini gerektiren ayarlarin imzasi. */
